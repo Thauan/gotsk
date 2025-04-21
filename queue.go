@@ -58,5 +58,10 @@ func (q *Queue) Start() {
 func (q *Queue) Stop() {
 	q.cancel()
 	q.wg.Wait()
-	close(q.done)
+
+	select {
+	case <-q.done:
+	default:
+		close(q.done)
+	}
 }

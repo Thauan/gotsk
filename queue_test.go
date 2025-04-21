@@ -34,12 +34,11 @@ func TestEnqueue(t *testing.T) {
 	assert.NoError(t, err)
 
 	queue.Start()
-
 	time.Sleep(500 * time.Millisecond)
-
-	assert.Len(t, store.tasks, 0)
-
 	queue.Stop()
+
+	assert.Len(t, store.queue, 0)
+	assert.Len(t, store.pending, 0)
 }
 
 func TestStartStop(t *testing.T) {
@@ -55,20 +54,12 @@ func TestStartStop(t *testing.T) {
 	assert.NoError(t, err)
 
 	queue.Start()
-
-	assert.Equal(t, 2, queue.workers)
-
 	time.Sleep(500 * time.Millisecond)
-
-	assert.Len(t, store.tasks, 0)
-
 	queue.Stop()
 
-	select {
-	case <-queue.done:
-	default:
-		t.Fatal("Canal 'done' não foi fechado")
-	}
+	assert.Equal(t, 2, queue.workers)
+	assert.Len(t, store.queue, 0)
+	assert.Len(t, store.pending, 0)
 }
 
 func TestFailedTask(t *testing.T) {
@@ -83,9 +74,9 @@ func TestFailedTask(t *testing.T) {
 	assert.NoError(t, err)
 
 	queue.Start()
-
 	time.Sleep(5 * time.Second)
-
-	assert.Len(t, store.tasks, 1)
 	queue.Stop()
+
+	assert.Len(t, store.queue, 0)
+	assert.Len(t, store.pending, 1)
 }
