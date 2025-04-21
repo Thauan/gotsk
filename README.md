@@ -1,6 +1,6 @@
 # 🐹 GoTSK - Task Queue Assíncrona em Go
 
-**GoTSK** é uma fila de tarefas assíncrona leve e extensível escrita em Go. Inspirada no Sidekiq, ela permite registrar e executar tarefas de forma concorrente com suporte a diferentes backends de armazenamento, como memória ou Redis.
+**GoTSK** é uma fila de tarefas assíncrona leve e extensível escrita em Go. Ela permite registrar e executar tarefas de forma concorrente com suporte a diferentes backends de armazenamento, como memória ou Redis.
 
 ## ✨ Recursos
 
