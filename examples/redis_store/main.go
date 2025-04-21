@@ -6,13 +6,15 @@ import (
 	"time"
 
 	"github.com/Thauan/gotsk"
+	"github.com/Thauan/gotsk/interfaces"
+	"github.com/Thauan/gotsk/store"
 )
 
 func main() {
-	store := gotsk.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
+	store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
 	queue := gotsk.NewWithStore(4, store)
 
-	queue.Register("send_email", func(ctx context.Context, payload gotsk.Payload) error {
+	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])
 		return nil
 	})
@@ -20,8 +22,8 @@ func main() {
 	queue.Start()
 	defer queue.Stop()
 
-	for i := 0; i < 5; i++ {
-		queue.Enqueue("send_email", gotsk.Payload{
+	for range 5 {
+		queue.Enqueue("send_email", interfaces.Payload{
 			"to":   "user@example.com",
 			"body": "Olá, mundo!",
 		})

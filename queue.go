@@ -4,23 +4,34 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/Thauan/gotsk/interfaces"
 )
 
-type HandlerFunc func(context.Context, Payload) error
+type HandlerFunc interfaces.HandlerFunc
 
 type Queue struct {
-	mu         sync.RWMutex
-	handlers   map[string]HandlerFunc
-	workers    int
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
-	store      TaskStore
-	done       chan bool
-	maxRetries int
+	mu          sync.RWMutex
+	handlers    map[string]HandlerFunc
+	workers     int
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
+	store       interfaces.TaskStore
+	done        chan bool
+	maxRetries  int
+	middlewares []interfaces.Middleware
 }
 
-func NewWithStore(workers int, store TaskStore) *Queue {
+func (q *Queue) Use(mw interfaces.Middleware) {
+	q.middlewares = append(q.middlewares, mw)
+}
+
+func (q *Queue) GetWorkers() int {
+	return q.workers
+}
+
+func NewWithStore(workers int, store interfaces.TaskStore) *Queue {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Queue{
 		handlers:   make(map[string]HandlerFunc),
@@ -36,16 +47,19 @@ func NewWithStore(workers int, store TaskStore) *Queue {
 func (q *Queue) Register(name string, handler HandlerFunc) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	for i := len(q.middlewares) - 1; i >= 0; i-- {
+		handler = HandlerFunc(q.middlewares[i](interfaces.HandlerFunc(handler)))
+	}
 	q.handlers[name] = handler
 }
 
-func (q *Queue) Enqueue(name string, payload Payload) error {
+func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	if _, ok := q.handlers[name]; !ok {
 		return fmt.Errorf("handler for task '%s' not registered", name)
 	}
-	return q.store.Push(Task{Name: name, Payload: payload})
+	return q.store.Push(interfaces.Task{Name: name, Payload: payload})
 }
 
 func (q *Queue) Start() {

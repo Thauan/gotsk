@@ -1,4 +1,4 @@
-package gotsk
+package store
 
 import (
 	"errors"

@@ -1,4 +1,4 @@
-package gotsk
+package store
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Thauan/gotsk/interfaces"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,7 +30,7 @@ func NewRedisStore(addr string, password string, db int, baseKey string) *RedisS
 	}
 }
 
-func (s *RedisStore) Push(task Task) error {
+func (s *RedisStore) Push(task interfaces.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("failed to marshal task: %w", err)
@@ -37,29 +38,29 @@ func (s *RedisStore) Push(task Task) error {
 	return s.client.LPush(context.Background(), s.queueKey, data).Err()
 }
 
-func (s *RedisStore) Pop() (Task, error) {
+func (s *RedisStore) Pop() (interfaces.Task, error) {
 	ctx := context.Background()
 	data, err := s.client.RPop(ctx, s.queueKey).Result()
 	if err == redis.Nil {
-		return Task{}, errors.New("no tasks available")
+		return interfaces.Task{}, errors.New("no tasks available")
 	}
 	if err != nil {
-		return Task{}, fmt.Errorf("failed to pop task: %w", err)
+		return interfaces.Task{}, fmt.Errorf("failed to pop task: %w", err)
 	}
 
 	if err := s.client.LPush(ctx, s.pendingKey, data).Err(); err != nil {
-		return Task{}, fmt.Errorf("failed to move to pending: %w", err)
+		return interfaces.Task{}, fmt.Errorf("failed to move to pending: %w", err)
 	}
 
-	var task Task
+	var task interfaces.Task
 	if err := json.Unmarshal([]byte(data), &task); err != nil {
-		return Task{}, fmt.Errorf("failed to unmarshal task: %w", err)
+		return interfaces.Task{}, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	return task, nil
 }
 
-func (s *RedisStore) Ack(task Task) error {
+func (s *RedisStore) Ack(task interfaces.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("failed to marshal task for ack: %w", err)

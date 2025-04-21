@@ -3,6 +3,8 @@ package gotsk
 import (
 	"log"
 	"time"
+
+	"github.com/Thauan/gotsk/interfaces"
 )
 
 func (q *Queue) worker() {
@@ -23,7 +25,7 @@ func (q *Queue) worker() {
 	}
 }
 
-func (q *Queue) process(task Task) {
+func (q *Queue) process(task interfaces.Task) {
 	q.mu.RLock()
 	handler, ok := q.handlers[task.Name]
 	q.mu.RUnlock()
@@ -31,6 +33,10 @@ func (q *Queue) process(task Task) {
 	if !ok {
 		log.Printf("no handler for task '%s'", task.Name)
 		return
+	}
+
+	for i := len(q.middlewares) - 1; i >= 0; i-- {
+		handler = HandlerFunc(q.middlewares[i](interfaces.HandlerFunc(handler)))
 	}
 
 	var err error

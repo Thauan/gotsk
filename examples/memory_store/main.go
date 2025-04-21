@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"github.com/Thauan/gotsk"
+	"github.com/Thauan/gotsk/interfaces"
+	"github.com/Thauan/gotsk/store"
 )
 
 func main() {
-	queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
+	queue := gotsk.NewWithStore(4, store.NewMemoryStore())
 
-	queue.Register("send_email", func(ctx context.Context, payload gotsk.Payload) error {
+	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])
 		return nil
 	})
@@ -20,7 +22,7 @@ func main() {
 	defer queue.Stop()
 
 	for range 5 {
-		queue.Enqueue("send_email", gotsk.Payload{
+		queue.Enqueue("send_email", interfaces.Payload{
 			"to":   "user@example.com",
 			"body": "Olá, mundo!",
 		})

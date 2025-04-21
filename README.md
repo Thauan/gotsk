@@ -43,7 +43,7 @@ func main() {
 	queue.Start()
 	defer queue.Stop()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		queue.Enqueue("send_email", gotsk.Payload{
 			"to":   "user@example.com",
 			"body": "Olá, mundo!",
