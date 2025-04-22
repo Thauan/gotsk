@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Thauan/gotsk/interfaces"
+	"github.com/google/uuid"
 )
 
 type HandlerFunc interfaces.HandlerFunc
@@ -78,4 +79,16 @@ func (q *Queue) Stop() {
 	default:
 		close(q.done)
 	}
+}
+
+func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
+	task := interfaces.Task{
+		ID:          uuid.NewString(),
+		Name:        name,
+		Payload:     payload,
+		Priority:    options.Priority,
+		ScheduledAt: options.ScheduledAt,
+	}
+
+	return q.store.Push(task)
 }
