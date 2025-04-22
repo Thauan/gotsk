@@ -87,7 +87,6 @@ store := interfaces.NewSQSStore(
 )
 
 queue := gotsk.NewWithStore(4, store)
-queue.Use(internal.ZapLoggingMiddleware(logger))
 ```
 
 ## Logging
@@ -96,7 +95,7 @@ queue.Use(internal.ZapLoggingMiddleware(logger))
 logger := log.New(os.Stderr, "", log.LstdFlags)
 
 queue := gotsk.NewWithStore(4, store.NewMemoryStore())
-queue.Use(internal.LoggingMiddleware(logger))
+queue.Use(middlewares.LoggingMiddleware(logger))
 ```
 
 
@@ -111,7 +110,7 @@ defer logger.Sync()
 
 store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
-queue.Use(internal.ZapLoggingMiddleware(logger))
+queue.Use(middlewares.ZapLoggingMiddleware(logger))
 ```
 ## ✅ Roadmap (ideias futuras)
 - Suporte a tasks com atraso (delayed jobs)
