@@ -7,7 +7,7 @@ import (
 
 	"github.com/Thauan/gotsk"
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/internal"
+	"github.com/Thauan/gotsk/middlewares"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"go.uber.org/zap"
@@ -35,7 +35,7 @@ func main() {
 	)
 
 	queue := gotsk.NewWithStore(4, store)
-	queue.Use(internal.ZapLoggingMiddleware(logger))
+	queue.Use(middlewares.ZapLoggingMiddleware(logger))
 
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])

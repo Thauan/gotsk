@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/internal"
+	"github.com/Thauan/gotsk/middlewares"
 )
 
 func captureOutput(f func()) string {
@@ -38,7 +38,7 @@ func captureOutput(f func()) string {
 func TestLoggingMiddleware(t *testing.T) {
 	logged := captureOutput(func() {
 		logger := log.New(os.Stderr, "", 0)
-		mw := internal.LoggingMiddleware(logger)
+		mw := middlewares.LoggingMiddleware(logger)
 		handler := mw(func(ctx context.Context, payload interfaces.Payload) error {
 			fmt.Fprintln(os.Stderr, "executando task")
 			return nil

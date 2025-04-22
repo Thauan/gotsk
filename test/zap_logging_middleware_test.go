@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/internal"
+	"github.com/Thauan/gotsk/middlewares"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -28,7 +28,7 @@ func TestZapLoggingMiddleware(t *testing.T) {
 	logger := zap.New(core)
 	defer logger.Sync()
 
-	middleware := internal.ZapLoggingMiddleware(logger)
+	middleware := middlewares.ZapLoggingMiddleware(logger)
 
 	handler := middleware(func(ctx context.Context, payload interfaces.Payload) error {
 		time.Sleep(10 * time.Millisecond)
