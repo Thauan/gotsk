@@ -1,9 +1,9 @@
 package interfaces
 
-type Payload map[string]interface{}
-
 type Task struct {
-	Name    string
-	Payload Payload
-	Retries int
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Payload       Payload `json:"payload"`
+	Retries       int     `json:"retries"`
+	ReceiptHandle string  `json:"-"`
 }
