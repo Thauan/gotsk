@@ -62,6 +62,34 @@ store := gotsk.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
+### 🛠️ Uso com SQS
+
+```go
+ctx := context.Background()
+
+cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+
+if err != nil {
+	log.Fatalf("failed to load AWS config: %v", err)
+}
+
+client := sqs.NewFromConfig(cfg)
+
+logger, err := zap.NewDevelopment()
+if err != nil {
+	log.Fatalf("Erro ao inicializar o logger: %v", err)
+}
+defer logger.Sync()
+
+store := interfaces.NewSQSStore(
+	client,
+	"https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
+)
+
+queue := gotsk.NewWithStore(4, store)
+queue.Use(internal.ZapLoggingMiddleware(logger))
+```
+
 
 ## ✅ Roadmap (ideias futuras)
 - Suporte a tasks com atraso (delayed jobs)
