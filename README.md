@@ -6,7 +6,7 @@
 
 - Execução assíncrona com múltiplos workers
 - Registro de handlers por nome
-- Suporte a backends pluggáveis (`MemoryStore`, `RedisStore`, `SQSStore`)
+- Suporte a múltiplos mecanismos de armazenamento de tarefas (`MemoryStore`, `RedisStore`, `SQSStore`)
 - Suporte a logs com middleware padrão e integração com [uber-go/zap](https://github.com/uber-go/zap)
 - Retry automático com backoff exponencial
 - Interface extensível para armazenamento (permite criar novos adapters)
