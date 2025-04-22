@@ -20,7 +20,7 @@ go get github.com/Thauan/gotsk
 ```
 
 ## Exemplos de uso
-### 🧪 Uso com MemoryStore
+### 🧪 MemoryStore
 
 ```go
 package main
@@ -55,14 +55,14 @@ func main() {
 }
 ```
 
-### 🛠️ Uso com Redis
+### 🛠️ Redis
 
 ```go
 store := gotsk.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
-### 🛠️ Uso com SQS
+### 🛠️ SQS
 
 ```go
 ctx := context.Background()
@@ -90,7 +90,29 @@ queue := gotsk.NewWithStore(4, store)
 queue.Use(internal.ZapLoggingMiddleware(logger))
 ```
 
+## Logging
+### 🛠️ Middleware Padrão
+```go
+logger := log.New(os.Stderr, "", log.LstdFlags)
 
+queue := gotsk.NewWithStore(4, store.NewMemoryStore())
+queue.Use(internal.LoggingMiddleware(logger))
+```
+
+
+### 🛠️ [uber-go/zap](https://github.com/uber-go/zap)
+```go
+logger, err := zap.NewDevelopment()
+if err != nil {
+	log.Fatalf("Erro ao inicializar o logger: %v", err)
+}
+
+defer logger.Sync()
+
+store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
+queue := gotsk.NewWithStore(4, store)
+queue.Use(internal.ZapLoggingMiddleware(logger))
+```
 ## ✅ Roadmap (ideias futuras)
 - Suporte a tasks com atraso (delayed jobs)
 - Deduplicação de tarefas
