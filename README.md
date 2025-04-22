@@ -1,4 +1,4 @@
-# 🐹 Gotsk - Task Queue Assíncrona em Go
+# Gotsk - Task Queue Assíncrona em Go
 
 **Gotsk** é uma fila de tarefas assíncrona leve e extensível escrita em Go. Ela permite registrar e executar tarefas de forma concorrente com suporte a diferentes backends de armazenamento, como memória ou Redis.
 
@@ -6,7 +6,8 @@
 
 - Execução assíncrona com múltiplos workers
 - Registro de handlers por nome
-- Suporte a backends pluggáveis (`MemoryStore`, `RedisStore`)
+- Suporte a backends pluggáveis (`MemoryStore`, `RedisStore`, `SQSStore`)
+- Suporte a logs com middleware padrão e integração com [uber-go/zap](https://github.com/uber-go/zap)
 - Retry automático com backoff exponencial
 - Interface extensível para armazenamento (permite criar novos adapters)
 
