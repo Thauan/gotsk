@@ -114,35 +114,37 @@ func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options inter
 }
 
 func (q *Queue) ServeUI(addr string, ctx context.Context) {
-	if UIPath == "" {
-		cwd, _ := os.Getwd()
-		UIPath = filepath.Join(cwd, "web-ui", "dist")
-	}
-
-	log.Printf("🌐 Servindo arquivos estáticos de: %s\n", UIPath)
-
-	fs := http.FileServer(http.Dir(UIPath))
-	mux := http.NewServeMux()
-	mux.Handle("/", fs)
-
-	mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
-		tasks := q.GetHistory()
-		if tasks == nil {
-			tasks = []interfaces.Task{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tasks)
-	})
-
-	srv := &http.Server{Addr: addr, Handler: mux}
-
 	go func() {
-		<-ctx.Done()
-		log.Println("🛑 Encerrando servidor UI...")
-		srv.Shutdown(context.Background())
-	}()
+		if UIPath == "" {
+			cwd, _ := os.Getwd()
+			UIPath = filepath.Join(cwd, "web-ui", "dist")
+		}
 
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("Erro ao iniciar UI: %v", err)
-	}
+		log.Printf("🌐 Servindo arquivos estáticos de: %s\n", UIPath)
+
+		fs := http.FileServer(http.Dir(UIPath))
+		mux := http.NewServeMux()
+		mux.Handle("/", fs)
+
+		mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
+			tasks := q.GetHistory()
+			if tasks == nil {
+				tasks = []interfaces.Task{}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(tasks)
+		})
+
+		srv := &http.Server{Addr: addr, Handler: mux}
+
+		go func() {
+			<-ctx.Done()
+			log.Println("🛑 Encerrando servidor UI...")
+			srv.Shutdown(context.Background())
+		}()
+
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("Erro ao iniciar UI: %v", err)
+		}
+	}()
 }

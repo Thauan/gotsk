@@ -3,6 +3,7 @@ package gotsk
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
 )
@@ -43,14 +44,17 @@ func (s *MemoryStore) Pop() (interfaces.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.queue) == 0 {
-		return interfaces.Task{}, errors.New("no tasks available")
+	now := time.Now()
+
+	for i, task := range s.queue {
+		if task.ScheduledAt.IsZero() || !task.ScheduledAt.After(now) {
+			s.queue = append(s.queue[:i], s.queue[i+1:]...)
+			s.pending = append(s.pending, task)
+			return task, nil
+		}
 	}
 
-	task := s.queue[0]
-	s.queue = s.queue[1:]
-	s.pending = append(s.pending, task)
-	return task, nil
+	return interfaces.Task{}, errors.New("no task ready")
 }
 
 func (s *MemoryStore) Ack(task interfaces.Task) error {
