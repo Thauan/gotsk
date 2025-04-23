@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/Thauan/gotsk"
@@ -20,31 +18,19 @@ func main() {
 	queue := gotsk.NewWithStore(4, store.NewMemoryStore())
 	queue.Use(middlewares.LoggingMiddleware(logger))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	queue.ServeUI("localhost:8080", ctx)
-	defer cancel()
-
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])
 		return nil
 	})
-
-	queue.Start()
-	defer queue.Stop()
 
 	for range 5 {
 		queue.EnqueueAt("send_email", interfaces.Payload{
 			"to": "exemplo@teste.com",
 		}, interfaces.TaskOptions{
 			Priority:    1,
-			ScheduledAt: time.Now().Add(1 * time.Minute),
+			ScheduledAt: time.Now().Add(30 * time.Second),
 		})
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-
-	log.Println("🔴 Encerrando...")
-	cancel()
+	gotsk.Run(queue, ":8080")
 }
