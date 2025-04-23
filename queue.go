@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/Thauan/gotsk/interfaces"
+	"github.com/google/uuid"
 )
 
 type HandlerFunc interfaces.HandlerFunc
@@ -30,47 +31,6 @@ type Queue struct {
 }
 
 var UIPath string
-
-func (q *Queue) ServeUI(addr string, ctx context.Context) {
-	// cwd, err := os.Getwd()
-	// if err != nil {
-	// 	log.Fatalf("Erro ao obter diretório atual: %v", err)
-	// }
-	// uiPath := filepath.Join(cwd, "web-ui", "dist")
-
-	// log.Printf("🌐 Servindo arquivos estáticos de: %s\n", uiPath)
-	if UIPath == "" {
-		cwd, _ := os.Getwd()
-		UIPath = filepath.Join(cwd, "web-ui", "dist")
-	}
-
-	log.Printf("🌐 Servindo arquivos estáticos de: %s\n", UIPath)
-
-	fs := http.FileServer(http.Dir(UIPath))
-	mux := http.NewServeMux()
-	mux.Handle("/", fs)
-
-	mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
-		tasks := q.GetHistory()
-		if tasks == nil {
-			tasks = []interfaces.Task{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tasks)
-	})
-
-	srv := &http.Server{Addr: addr, Handler: mux}
-
-	go func() {
-		<-ctx.Done()
-		log.Println("🛑 Encerrando servidor UI...")
-		srv.Shutdown(context.Background())
-	}()
-
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("Erro ao iniciar UI: %v", err)
-	}
-}
 
 func (q *Queue) Use(mw interfaces.Middleware) {
 	q.middlewares = append(q.middlewares, mw)
@@ -139,4 +99,50 @@ func (q *Queue) GetHistory() []interfaces.Task {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return q.history
+}
+
+func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
+	task := interfaces.Task{
+		ID:          uuid.NewString(),
+		Name:        name,
+		Payload:     payload,
+		Priority:    options.Priority,
+		ScheduledAt: options.ScheduledAt,
+	}
+
+	return q.store.Push(task)
+}
+
+func (q *Queue) ServeUI(addr string, ctx context.Context) {
+	if UIPath == "" {
+		cwd, _ := os.Getwd()
+		UIPath = filepath.Join(cwd, "web-ui", "dist")
+	}
+
+	log.Printf("🌐 Servindo arquivos estáticos de: %s\n", UIPath)
+
+	fs := http.FileServer(http.Dir(UIPath))
+	mux := http.NewServeMux()
+	mux.Handle("/", fs)
+
+	mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
+		tasks := q.GetHistory()
+		if tasks == nil {
+			tasks = []interfaces.Task{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tasks)
+	})
+
+	srv := &http.Server{Addr: addr, Handler: mux}
+
+	go func() {
+		<-ctx.Done()
+		log.Println("🛑 Encerrando servidor UI...")
+		srv.Shutdown(context.Background())
+	}()
+
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("Erro ao iniciar UI: %v", err)
+	}
 }

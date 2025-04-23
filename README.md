@@ -23,36 +23,24 @@ go get github.com/Thauan/gotsk
 ### 🧪 MemoryStore
 
 ```go
-package main
+queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 
-import (
-	"context"
-	"log"
-	"time"
+queue.Register("send_email", func(ctx context.Context, payload gotsk.Payload) error {
+	log.Println("Enviando email para:", payload["to"])
+	return nil
+})
 
-	"github.com/Thauan/gotsk"
-)
+queue.Start()
+defer queue.Stop()
 
-func main() {
-	queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
-
-	queue.Register("send_email", func(ctx context.Context, payload gotsk.Payload) error {
-		log.Println("Enviando email para:", payload["to"])
-		return nil
+for range 5 {
+	queue.Enqueue("send_email", gotsk.Payload{
+		"to":   "user@example.com",
+		"body": "Olá, mundo!",
 	})
-
-	queue.Start()
-	defer queue.Stop()
-
-	for range 5 {
-		queue.Enqueue("send_email", gotsk.Payload{
-			"to":   "user@example.com",
-			"body": "Olá, mundo!",
-		})
-	}
-
-	time.Sleep(5 * time.Second)
 }
+
+time.Sleep(5 * time.Second)
 ```
 
 ### 🛠️ Redis
@@ -87,7 +75,6 @@ store := interfaces.NewSQSStore(
 )
 
 queue := gotsk.NewWithStore(4, store)
-queue.Use(internal.ZapLoggingMiddleware(logger))
 ```
 
 ## Logging
@@ -96,7 +83,7 @@ queue.Use(internal.ZapLoggingMiddleware(logger))
 logger := log.New(os.Stderr, "", log.LstdFlags)
 
 queue := gotsk.NewWithStore(4, store.NewMemoryStore())
-queue.Use(internal.LoggingMiddleware(logger))
+queue.Use(middlewares.LoggingMiddleware(logger))
 ```
 
 
@@ -111,7 +98,7 @@ defer logger.Sync()
 
 store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
-queue.Use(internal.ZapLoggingMiddleware(logger))
+queue.Use(middlewares.ZapLoggingMiddleware(logger))
 ```
 ## ✅ Roadmap (ideias futuras)
 - Suporte a tasks com atraso (delayed jobs)
