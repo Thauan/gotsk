@@ -20,6 +20,15 @@ func (q *Queue) worker() {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
+			if !task.ScheduledAt.IsZero() && task.ScheduledAt.After(time.Now()) {
+				_ = q.store.Push(task)
+
+				sleepFor := min(time.Until(task.ScheduledAt), time.Second)
+				time.Sleep(sleepFor)
+				continue
+			}
+
 			q.process(task)
 		}
 	}

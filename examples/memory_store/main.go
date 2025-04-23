@@ -27,9 +27,11 @@ func main() {
 	defer queue.Stop()
 
 	for range 5 {
-		queue.Enqueue("send_email", interfaces.Payload{
-			"to":   "user@example.com",
-			"body": "Olá, mundo!",
+		queue.EnqueueAt("send_email", interfaces.Payload{
+			"to": "exemplo@teste.com",
+		}, interfaces.TaskOptions{
+			Priority:    1,
+			ScheduledAt: time.Now().Add(1 * time.Minute),
 		})
 	}
 
