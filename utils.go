@@ -1,15 +1,15 @@
 package gotsk
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"syscall"
+	"fmt"
+
+	"github.com/google/uuid"
 )
 
-func WaitForInterrupt(cancel context.CancelFunc) {
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	cancel()
+func WorkerId() string {
+	return fmt.Sprintf("worker-%s", uuid.NewString())
+}
+
+func TaskId() string {
+	return fmt.Sprintf("task-%s", uuid.NewString())
 }

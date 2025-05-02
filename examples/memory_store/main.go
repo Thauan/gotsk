@@ -23,9 +23,6 @@ func main() {
 		return nil
 	})
 
-	queue.Start()
-	defer queue.Stop()
-
 	for range 5 {
 		queue.EnqueueAt("send_email", interfaces.Payload{
 			"to":   "exemplo@teste.com",

@@ -9,12 +9,14 @@ import (
 
 func (q *Queue) worker() {
 	defer q.wg.Done()
-	log.Println("👷 Worker iniciado")
+
+	workerID := WorkerId()
+	log.Printf("👷 Worker %s iniciado", workerID)
 
 	for {
 		select {
 		case <-q.ctx.Done():
-			log.Println("🛑 Worker encerrado")
+			log.Printf("🛑 Worker %s encerrado", workerID)
 			return
 		default:
 			task, err := q.store.Pop()
@@ -31,18 +33,18 @@ func (q *Queue) worker() {
 				continue
 			}
 
-			q.process(task)
+			q.process(task, workerID)
 		}
 	}
 }
 
-func (q *Queue) process(task interfaces.Task) {
+func (q *Queue) process(task interfaces.Task, workerID string) {
 	q.mu.RLock()
 	handler, ok := q.handlers[task.Name]
 	q.mu.RUnlock()
 
 	if !ok {
-		log.Printf("no handler for task '%s'", task.Name)
+		log.Printf("⚠️ Worker %s: handler não registrado para task '%s'", workerID, task.Name)
 		return
 	}
 
@@ -50,15 +52,18 @@ func (q *Queue) process(task interfaces.Task) {
 		handler = HandlerFunc(q.middlewares[i](interfaces.HandlerFunc(handler)))
 	}
 
+	log.Printf("🚀 Worker %s: processando task %s (%s)", workerID, task.ID, task.Name)
+
 	var err error
 	for attempt := 0; attempt <= q.maxRetries; attempt++ {
 		err = handler(q.ctx, task.Payload)
 		if err == nil {
 			q.store.Ack(task)
+			log.Printf("✅ Worker %s: task %s concluída", workerID, task.ID)
 			return
 		}
-		log.Printf("task '%s' failed (attempt %d): %v", task.Name, attempt+1, err)
+		log.Printf("❌ Worker %s: task %s falhou (tentativa %d): %v", workerID, task.ID, attempt+1, err)
 		time.Sleep(simpleBackoff(attempt))
 	}
-	log.Printf("task '%s' failed after %d attempts: %v", task.Name, q.maxRetries+1, err)
+	log.Printf("💥 Worker %s: task %s falhou após %d tentativas", workerID, task.ID, q.maxRetries+1)
 }

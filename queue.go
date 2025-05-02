@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/google/uuid"
 )
 
 type HandlerFunc interfaces.HandlerFunc
@@ -60,11 +59,16 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 	if _, ok := q.handlers[name]; !ok {
 		return fmt.Errorf("handler for task '%s' not registered", name)
 	}
-	return q.store.Push(interfaces.Task{Name: name, Payload: payload})
+
+	return q.store.Push(interfaces.Task{
+		ID:      TaskId(),
+		Name:    name,
+		Payload: payload,
+	})
 }
 
 func (q *Queue) Start() {
-	for i := 0; i < q.workers; i++ {
+	for range q.workers {
 		q.wg.Add(1)
 		go q.worker()
 	}
@@ -83,7 +87,7 @@ func (q *Queue) Stop() {
 
 func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
 	task := interfaces.Task{
-		ID:          uuid.NewString(),
+		ID:          TaskId(),
 		Name:        name,
 		Payload:     payload,
 		Priority:    options.Priority,
