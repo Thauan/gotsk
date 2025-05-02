@@ -9,15 +9,17 @@ import (
 
 func (q *Queue) worker() {
 	defer q.wg.Done()
+	log.Println("👷 Worker iniciado")
 
 	for {
 		select {
 		case <-q.ctx.Done():
+			log.Println("🛑 Worker encerrado")
 			return
 		default:
 			task, err := q.store.Pop()
 			if err != nil {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 

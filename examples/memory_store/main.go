@@ -28,12 +28,13 @@ func main() {
 
 	for range 5 {
 		queue.EnqueueAt("send_email", interfaces.Payload{
-			"to": "exemplo@teste.com",
+			"to":   "exemplo@teste.com",
+			"body": "Olá, mundo!",
 		}, interfaces.TaskOptions{
 			Priority:    1,
-			ScheduledAt: time.Now().Add(1 * time.Minute),
+			ScheduledAt: time.Now().Add(30 * time.Second),
 		})
 	}
 
-	time.Sleep(5 * time.Second)
+	gotsk.Run(queue)
 }
