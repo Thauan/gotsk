@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/Thauan/gotsk"
@@ -29,22 +27,15 @@ func main() {
 		return nil
 	})
 
-	queue.Start()
-	defer queue.Stop()
-
 	for range 5 {
 		queue.EnqueueAt("send_email", interfaces.Payload{
-			"to": "exemplo@teste.com",
+			"to":   "exemplo@teste.com",
+			"body": "Olá, mundo!",
 		}, interfaces.TaskOptions{
 			Priority:    1,
-			ScheduledAt: time.Now().Add(1 * time.Minute),
+			ScheduledAt: time.Now().Add(30 * time.Second),
 		})
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-
-	log.Println("🔴 Encerrando...")
-	cancel()
+	gotsk.Run(queue)
 }

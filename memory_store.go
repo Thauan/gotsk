@@ -47,14 +47,16 @@ func (s *MemoryStore) Pop() (interfaces.Task, error) {
 	now := time.Now()
 
 	for i, task := range s.queue {
-		if task.ScheduledAt.IsZero() || !task.ScheduledAt.After(now) {
-			s.queue = append(s.queue[:i], s.queue[i+1:]...)
-			s.pending = append(s.pending, task)
-			return task, nil
+		if task.ScheduledAt.After(now) {
+			continue
 		}
+
+		s.queue = append(s.queue[:i], s.queue[i+1:]...)
+		s.pending = append(s.pending, task)
+		return task, nil
 	}
 
-	return interfaces.Task{}, errors.New("no task ready")
+	return interfaces.Task{}, errors.New("no ready tasks available")
 }
 
 func (s *MemoryStore) Ack(task interfaces.Task) error {

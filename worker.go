@@ -10,40 +10,41 @@ import (
 func (q *Queue) worker() {
 	defer q.wg.Done()
 
+	workerID := WorkerId()
+	log.Printf("👷 Worker %s iniciado", workerID)
+
 	for {
 		select {
 		case <-q.ctx.Done():
+			log.Printf("🛑 Worker %s encerrado", workerID)
 			return
 		default:
 			task, err := q.store.Pop()
 			if err != nil {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 
 			if !task.ScheduledAt.IsZero() && task.ScheduledAt.After(time.Now()) {
 				_ = q.store.Push(task)
 
-				sleepFor := time.Until(task.ScheduledAt)
-				if sleepFor > time.Second {
-					sleepFor = time.Second
-				}
+				sleepFor := min(time.Until(task.ScheduledAt), time.Second)
 				time.Sleep(sleepFor)
 				continue
 			}
 
-			q.process(task)
+			q.process(task, workerID)
 		}
 	}
 }
 
-func (q *Queue) process(task interfaces.Task) {
+func (q *Queue) process(task interfaces.Task, workerID string) {
 	q.mu.RLock()
 	handler, ok := q.handlers[task.Name]
 	q.mu.RUnlock()
 
 	if !ok {
-		log.Printf("no handler for task '%s'", task.Name)
+		log.Printf("⚠️ Worker %s: handler não registrado para task '%s'", workerID, task.Name)
 		return
 	}
 
@@ -51,15 +52,18 @@ func (q *Queue) process(task interfaces.Task) {
 		handler = HandlerFunc(q.middlewares[i](interfaces.HandlerFunc(handler)))
 	}
 
+	log.Printf("🚀 Worker %s: processando task %s (%s)", workerID, task.ID, task.Name)
+
 	var err error
 	for attempt := 0; attempt <= q.maxRetries; attempt++ {
 		err = handler(q.ctx, task.Payload)
 		if err == nil {
 			q.store.Ack(task)
+			log.Printf("✅ Worker %s: task %s concluída", workerID, task.ID)
 			return
 		}
-		log.Printf("task '%s' failed (attempt %d): %v", task.Name, attempt+1, err)
+		log.Printf("❌ Worker %s: task %s falhou (tentativa %d): %v", workerID, task.ID, attempt+1, err)
 		time.Sleep(simpleBackoff(attempt))
 	}
-	log.Printf("task '%s' failed after %d attempts: %v", task.Name, q.maxRetries+1, err)
+	log.Printf("💥 Worker %s: task %s falhou após %d tentativas", workerID, task.ID, q.maxRetries+1)
 }

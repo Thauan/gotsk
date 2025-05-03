@@ -1,27 +1,27 @@
-# Gotsk - Task Queue Assíncrona em Go
+# Gotsk - Asynchronous Task Queue in Go
 
-📖 Read in [English](./README.en.md)
+📖 Read in [Portuguese](./README.md)
 
-**Gotsk** é uma fila de tarefas assíncrona leve e extensível escrita em Go. Ela permite registrar e executar tarefas de forma concorrente com suporte a diferentes backends de armazenamento, como memória, SQS ou Redis.
+**Gotsk** is a lightweight and extensible asynchronous task queue written in Go. It allows you to register and execute tasks concurrently, with support for different storage backends like memory, SQS or Redis.
 
-## ✨ Recursos
+## ✨ Features
 
-- Execução assíncrona com múltiplos workers utilizando goroutines
-- Registro de handlers por nome
-- Suporte a múltiplos mecanismos de armazenamento de tarefas (`MemoryStore`, `RedisStore`, `SQSStore`)
-- Suporte a logs com middleware padrão e integração com [uber-go/zap](https://github.com/uber-go/zap)
-- Retry automático com backoff exponencial
-- Interface extensível para armazenamento (permite criar novos adapters)
+- Asynchronous execution with multiple workers using goroutines
+- Handler registration by name
+- Support for multiple task storage backends (`MemoryStore`, `RedisStore`, `SQSStore`)
+- Logging support with standard middleware and integration with [uber-go/zap](https://github.com/uber-go/zap)
+- Automatic retry with exponential backoff
+- Extensible interface for storage (allows creation of custom adapters)
 
 ---
 
-## 🚀 Instalação
+## 🚀 Installation
 
 ```bash
 go get github.com/Thauan/gotsk
 ```
 
-## Exemplos de uso
+## Usage Examples
 
 ### 🛠️ MemoryStore
 
@@ -29,7 +29,7 @@ go get github.com/Thauan/gotsk
 queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 
 queue.Register("send_email", func(ctx context.Context, payload gotsk.Payload) error {
-	log.Println("Enviando email para:", payload["to"])
+	log.Println("Sending email to:", payload["to"])
 	return nil
 })
 
@@ -38,7 +38,7 @@ defer queue.Stop()
 
 for range 5 {
 	queue.EnqueueAt("send_email", interfaces.Payload{
-		"to": "exemplo@teste.com",
+		"to": "example@test.com",
 	}, interfaces.TaskOptions{
 		Priority:    1,
 		ScheduledAt: time.Now().Add(1 * time.Minute),
@@ -70,7 +70,7 @@ client := sqs.NewFromConfig(cfg)
 
 logger, err := zap.NewDevelopment()
 if err != nil {
-	log.Fatalf("Erro ao inicializar o logger: %v", err)
+	log.Fatalf("Failed to initialize logger: %v", err)
 }
 defer logger.Sync()
 
@@ -84,7 +84,7 @@ queue := gotsk.NewWithStore(4, store)
 
 ## Logging
 
-### 🛠️ Middleware Padrão
+### 🛠️ Standard Middleware
 
 ```go
 logger := log.New(os.Stderr, "", log.LstdFlags)
@@ -98,7 +98,7 @@ queue.Use(middlewares.LoggingMiddleware(logger))
 ```go
 logger, err := zap.NewDevelopment()
 if err != nil {
-	log.Fatalf("Erro ao inicializar o logger: %v", err)
+	log.Fatalf("Failed to initialize logger: %v", err)
 }
 
 defer logger.Sync()
@@ -108,17 +108,17 @@ queue := gotsk.NewWithStore(4, store)
 queue.Use(middlewares.ZapLoggingMiddleware(logger))
 ```
 
-## ✅ Roadmap (ideias futuras)
+## ✅ Roadmap (future ideas)
 
-- Suporte a tasks com atraso (delayed jobs)
-- Deduplicação de tarefas
-- Persistência em disco
-- Web UI para monitoramento
-- Middleware (métricas e tracing)
+- Delayed jobs
+- Task deduplication
+- Disk persistence
+- Web UI for monitoring
+- Middleware for metrics and tracing
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues, enviar PRs ou sugerir melhorias.
+Contributions are welcome! Feel free to open issues, send PRs, or suggest improvements.
 
-📄 Licença
+📄 License
 MIT License © Thauan Almeida
