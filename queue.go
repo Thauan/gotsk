@@ -9,24 +9,34 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
+	"github.com/gorilla/websocket"
 )
 
 type HandlerFunc interfaces.HandlerFunc
 
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
 type Queue struct {
-	mu          sync.RWMutex
-	handlers    map[string]HandlerFunc
-	workers     int
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	store       interfaces.TaskStore
-	done        chan bool
-	maxRetries  int
-	middlewares []interfaces.Middleware
-	history     []interfaces.Task
+	mu           sync.RWMutex
+	handlers     map[string]HandlerFunc
+	workers      int
+	wg           sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	store        interfaces.TaskStore
+	done         chan bool
+	maxRetries   int
+	middlewares  []interfaces.Middleware
+	history      []interfaces.Task
+	sseClients   map[chan interfaces.Task]bool
+	sseClientsMu sync.Mutex
 }
 
 var UIPath string
@@ -68,11 +78,19 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 		return fmt.Errorf("handler for task '%s' not registered", name)
 	}
 
-	return q.store.Push(interfaces.Task{
-		ID:      TaskId(),
-		Name:    name,
-		Payload: payload,
-	})
+	time.Sleep(2 * time.Second)
+
+	task := interfaces.Task{
+		ID:        TaskId(),
+		Name:      name,
+		Payload:   payload,
+		Status:    "queued",
+		CreatedAt: time.Now(),
+	}
+
+	q.broadcast(task)
+
+	return q.store.Push(task)
 }
 
 func (q *Queue) Start() {
@@ -106,15 +124,36 @@ func (q *Queue) GetHistory() []interfaces.Task {
 }
 
 func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
+	time.Sleep(2 * time.Second)
+
 	task := interfaces.Task{
 		ID:          TaskId(),
 		Name:        name,
 		Payload:     payload,
+		Status:      "scheduled",
 		Priority:    options.Priority,
 		ScheduledAt: options.ScheduledAt,
 	}
 
+	q.broadcast(task)
+
 	return q.store.Push(task)
+}
+
+func (q *Queue) registerSSEClient(ch chan interfaces.Task) {
+	q.sseClientsMu.Lock()
+	defer q.sseClientsMu.Unlock()
+	if q.sseClients == nil {
+		q.sseClients = make(map[chan interfaces.Task]bool)
+	}
+	q.sseClients[ch] = true
+}
+
+func (q *Queue) unregisterSSEClient(ch chan interfaces.Task) {
+	q.sseClientsMu.Lock()
+	defer q.sseClientsMu.Unlock()
+	delete(q.sseClients, ch)
+	close(ch)
 }
 
 func (q *Queue) ServeUI(addr string, ctx context.Context) {
@@ -130,13 +169,36 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 		mux := http.NewServeMux()
 		mux.Handle("/", fs)
 
-		mux.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
-			tasks := q.GetHistory()
-			if tasks == nil {
-				tasks = []interfaces.Task{}
+		mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(tasks)
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+
+			ch := make(chan interfaces.Task)
+			q.registerSSEClient(ch)
+			defer q.unregisterSSEClient(ch)
+
+			notify := r.Context().Done()
+
+			for {
+				select {
+				case <-notify:
+					return
+				case task, ok := <-ch:
+					if !ok {
+						return
+					}
+					data, _ := json.Marshal(task)
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					flusher.Flush()
+				}
+			}
 		})
 
 		srv := &http.Server{Addr: addr, Handler: mux}
@@ -151,4 +213,15 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 			log.Fatalf("Erro ao iniciar UI: %v", err)
 		}
 	}()
+}
+
+func (q *Queue) broadcast(task interfaces.Task) {
+	q.sseClientsMu.Lock()
+	defer q.sseClientsMu.Unlock()
+	for ch := range q.sseClients {
+		select {
+		case ch <- task:
+		default:
+		}
+	}
 }

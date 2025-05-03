@@ -54,16 +54,26 @@ func (q *Queue) process(task interfaces.Task, workerID string) {
 
 	log.Printf("🚀 Worker %s: processando task %s (%s)", workerID, task.ID, task.Name)
 
+	task.Status = "running"
+	q.broadcast(task)
+
 	var err error
 	for attempt := 0; attempt <= q.maxRetries; attempt++ {
 		err = handler(q.ctx, task.Payload)
 		if err == nil {
+			task.Status = "completed"
+			q.AddToHistory(task)
 			q.store.Ack(task)
+			q.broadcast(task)
 			log.Printf("✅ Worker %s: task %s concluída", workerID, task.ID)
 			return
 		}
 		log.Printf("❌ Worker %s: task %s falhou (tentativa %d): %v", workerID, task.ID, attempt+1, err)
 		time.Sleep(simpleBackoff(attempt))
 	}
+
+	task.Status = "failed"
+	q.broadcast(task)
+
 	log.Printf("💥 Worker %s: task %s falhou após %d tentativas", workerID, task.ID, q.maxRetries+1)
 }

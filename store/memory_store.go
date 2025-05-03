@@ -2,34 +2,21 @@ package store
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
 )
 
 type MemoryStore struct {
-	mu      sync.Mutex
-	queue   []interfaces.Task
-	pending []interfaces.Task
-}
-
-func (m *MemoryStore) LenQueue() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.queue)
-}
-
-func (m *MemoryStore) LenPending() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.pending)
+	BaseStore
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		queue:   []interfaces.Task{},
-		pending: []interfaces.Task{},
+		BaseStore: BaseStore{
+			queue:   []interfaces.Task{},
+			pending: []interfaces.Task{},
+		},
 	}
 }
 
@@ -68,16 +55,4 @@ func (s *MemoryStore) Ack(task interfaces.Task) error {
 		}
 	}
 	return errors.New("task not found in pending")
-}
-
-func equalPayload(a, b interfaces.Payload) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
 }

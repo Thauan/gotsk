@@ -1,10 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { TaskDashboard } from '../src/components/task-dashboard'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <TaskDashboard />
   </StrictMode>,
 )
