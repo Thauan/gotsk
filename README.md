@@ -1,6 +1,6 @@
-# Gotsk - Task Queue Assíncrona em Go
-
 📖 Read in [English](./README.en.md)
+
+# Gotsk - Task Queue Assíncrona em Go
 
 **Gotsk** é uma fila de tarefas assíncrona leve e extensível escrita em Go. Ela permite registrar e executar tarefas de forma concorrente com suporte a diferentes backends de armazenamento, como memória, SQS ou Redis.
 
