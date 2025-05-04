@@ -18,10 +18,6 @@ func main() {
 	queue := gotsk.NewWithStore(4, store.NewMemoryStore())
 	queue.Use(middlewares.LoggingMiddleware(logger))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	queue.ServeUI("localhost:8080", ctx)
-	defer cancel()
-
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])
 		return nil
@@ -37,5 +33,5 @@ func main() {
 		})
 	}
 
-	gotsk.Run(queue)
+	gotsk.Run(queue, ":8080")
 }
