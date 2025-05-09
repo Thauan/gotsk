@@ -1,27 +1,23 @@
 package gotsk
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/gorilla/websocket"
+	"github.com/Thauan/gotsk/middlewares"
 )
 
 type HandlerFunc interfaces.HandlerFunc
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 type Queue struct {
 	mu           sync.RWMutex
@@ -124,8 +120,6 @@ func (q *Queue) GetHistory() []interfaces.Task {
 }
 
 func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
-	time.Sleep(2 * time.Second)
-
 	task := interfaces.Task{
 		ID:          TaskId(),
 		Name:        name,
@@ -136,6 +130,8 @@ func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options inter
 	}
 
 	q.broadcast(task)
+
+	time.Sleep(2 * time.Second)
 
 	return q.store.Push(task)
 }
@@ -158,18 +154,42 @@ func (q *Queue) unregisterSSEClient(ch chan interfaces.Task) {
 
 func (q *Queue) ServeUI(addr string, ctx context.Context) {
 	go func() {
-		if UIPath == "" {
-			cwd, _ := os.Getwd()
-			UIPath = filepath.Join(cwd, "web-ui", "dist")
-		}
-
-		log.Printf("🌐 Servindo arquivos estáticos de: %s\n", UIPath)
-
-		fs := http.FileServer(http.Dir(UIPath))
 		mux := http.NewServeMux()
-		mux.Handle("/", fs)
 
-		mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			tmplPath := filepath.Join("web-ui", "templates", "task-dashboard.html")
+			tmpl, err := template.ParseFiles(tmplPath)
+			if err != nil {
+				http.Error(w, "Erro ao carregar template", http.StatusInternalServerError)
+				log.Println("Erro ao carregar template:", err)
+				return
+			}
+
+			data := struct {
+				Stats  any
+				Queues any
+				Tasks  any
+			}{
+				Stats:  nil,
+				Queues: nil,
+				Tasks:  nil,
+			}
+
+			if err := tmpl.Execute(w, data); err != nil {
+				http.Error(w, "Erro ao renderizar template", http.StatusInternalServerError)
+				log.Println("Erro ao renderizar:", err)
+			}
+		})
+
+		var rowTmpl = template.Must(template.New("row").Parse(`
+			<tr id="task-{{.ID}}" data-task-id="{{.ID}}" class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+				<td class="px-4 py-2">{{.Status}}</td>
+				<td class="px-4 py-2">{{.ID}} / {{.Name}}</td>
+				<td class="px-4 py-2 text-right">ações</td>
+			</tr>
+		`))
+
+		mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 			flusher, ok := w.(http.Flusher)
 			if !ok {
 				http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
@@ -190,18 +210,32 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 				select {
 				case <-notify:
 					return
-				case task, ok := <-ch:
-					if !ok {
-						return
+				case task := <-ch:
+					var buf bytes.Buffer
+					if err := rowTmpl.Execute(&buf, task); err != nil {
+						log.Println("template error:", err)
+						continue
 					}
-					data, _ := json.Marshal(task)
-					fmt.Fprintf(w, "data: %s\n\n", data)
+
+					eventName := "task-added"
+
+					if task.Status != "queued" && task.Status != "scheduled" {
+						eventName = "task-updated"
+					}
+
+					fmt.Fprintf(w, "event: %s\n", eventName)
+					fmt.Fprintf(w, "data: %s\n\n", strings.ReplaceAll(buf.String(), "\n", ""))
+					log.Printf("Enviando evento: %s para a tarefa: %s", eventName, task.ID)
+
 					flusher.Flush()
 				}
 			}
 		})
 
-		srv := &http.Server{Addr: addr, Handler: mux}
+		srv := &http.Server{
+			Addr:    addr,
+			Handler: middlewares.HTTPLoggingMiddleware(log.New(os.Stdout, "", log.LstdFlags))(mux),
+		}
 
 		go func() {
 			<-ctx.Done()
@@ -209,6 +243,7 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 			srv.Shutdown(context.Background())
 		}()
 
+		log.Printf("🌐 Servindo UI em http://%s", addr)
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatalf("Erro ao iniciar UI: %v", err)
 		}
@@ -218,10 +253,15 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 func (q *Queue) broadcast(task interfaces.Task) {
 	q.sseClientsMu.Lock()
 	defer q.sseClientsMu.Unlock()
+
+	log.Printf("Broadcasting task: %s", task.ID)
+
 	for ch := range q.sseClients {
 		select {
 		case ch <- task:
+			log.Printf("Sent task %s to client", task.ID)
 		default:
+			log.Printf("Client channel is full for task %s", task.ID)
 		}
 	}
 }

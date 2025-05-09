@@ -33,5 +33,5 @@ func main() {
 		})
 	}
 
-	gotsk.Run(queue, ":8080")
+	gotsk.Run(queue, "localhost:8080")
 }
