@@ -1,6 +1,6 @@
-# Gotsk - Asynchronous Task Queue in Go
-
 📖 Read in [Portuguese](./README.md)
+
+# Gotsk - Asynchronous Task Queue in Go
 
 **Gotsk** is a lightweight and extensible asynchronous task queue written in Go. It allows you to register and execute tasks concurrently, with support for different storage backends like memory, SQS or Redis.
 
