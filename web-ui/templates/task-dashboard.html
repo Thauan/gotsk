@@ -40,6 +40,8 @@
             if (existing) {
               existing.replaceWith(newRow);
             }
+
+            tbody.appendChild(newRow);
           });
 
           sse.onerror = (e) => {
