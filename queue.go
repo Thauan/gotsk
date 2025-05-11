@@ -31,6 +31,8 @@ type Queue struct {
 	maxRetries   int
 	middlewares  []interfaces.Middleware
 	history      []interfaces.Task
+	tasks        map[string]interfaces.Task
+	queues       map[string][]string
 	sseClients   map[chan interfaces.Task]bool
 	sseClientsMu sync.Mutex
 }
@@ -70,11 +72,10 @@ func (q *Queue) Register(name string, handler HandlerFunc) {
 func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
+
 	if _, ok := q.handlers[name]; !ok {
 		return fmt.Errorf("handler for task '%s' not registered", name)
 	}
-
-	time.Sleep(2 * time.Second)
 
 	task := interfaces.Task{
 		ID:        TaskId(),
@@ -84,10 +85,36 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 		CreatedAt: time.Now(),
 	}
 
+	if err := q.store.Push(task); err != nil {
+		return err
+	}
+
 	q.broadcast(task)
 
-	return q.store.Push(task)
+	return nil
 }
+
+// func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
+// 	q.mu.RLock()
+// 	defer q.mu.RUnlock()
+// 	if _, ok := q.handlers[name]; !ok {
+// 		return fmt.Errorf("handler for task '%s' not registered", name)
+// 	}
+
+// 	time.Sleep(2 * time.Second)
+
+// 	task := interfaces.Task{
+// 		ID:        TaskId(),
+// 		Name:      name,
+// 		Payload:   payload,
+// 		Status:    "queued",
+// 		CreatedAt: time.Now(),
+// 	}
+
+// 	q.broadcast(task)
+
+// 	return q.store.Push(task)
+// }
 
 func (q *Queue) Start() {
 	for range q.workers {
@@ -107,18 +134,6 @@ func (q *Queue) Stop() {
 	}
 }
 
-func (q *Queue) AddToHistory(task interfaces.Task) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.history = append(q.history, task)
-}
-
-func (q *Queue) GetHistory() []interfaces.Task {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	return q.history
-}
-
 func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
 	task := interfaces.Task{
 		ID:          TaskId(),
@@ -129,11 +144,66 @@ func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options inter
 		ScheduledAt: options.ScheduledAt,
 	}
 
+	if err := q.store.Push(task); err != nil {
+		return err
+	}
+
 	q.broadcast(task)
 
-	time.Sleep(2 * time.Second)
+	return nil
+}
 
-	return q.store.Push(task)
+func (q *Queue) ListTasks() []interfaces.Task {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	tasks := make([]interfaces.Task, 0, len(q.tasks))
+	for _, task := range q.tasks {
+		tasks = append(tasks, task)
+	}
+	return tasks
+}
+
+func (q *Queue) ListQueues() map[string]int {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	result := make(map[string]int)
+	for queueName, taskIDs := range q.queues {
+		result[queueName] = len(taskIDs)
+	}
+	return result
+}
+
+func (q *Queue) GetStats() map[string]int {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	stats := map[string]int{
+		"total":    len(q.tasks),
+		"queued":   0,
+		"running":  0,
+		"done":     0,
+		"failed":   0,
+		"canceled": 0,
+	}
+
+	for _, task := range q.tasks {
+		switch task.Status {
+		case "queued":
+			stats["queued"]++
+		case "running":
+			stats["running"]++
+		case "done":
+			stats["done"]++
+		case "failed":
+			stats["failed"]++
+		case "canceled":
+			stats["canceled"]++
+		}
+	}
+
+	return stats
 }
 
 func (q *Queue) registerSSEClient(ch chan interfaces.Task) {
@@ -148,8 +218,86 @@ func (q *Queue) registerSSEClient(ch chan interfaces.Task) {
 func (q *Queue) unregisterSSEClient(ch chan interfaces.Task) {
 	q.sseClientsMu.Lock()
 	defer q.sseClientsMu.Unlock()
+
 	delete(q.sseClients, ch)
 	close(ch)
+}
+
+func (q *Queue) streamTasks(w http.ResponseWriter, r *http.Request, tmpl *template.Template) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming não suportado", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	taskCh := q.Subscribe()
+	defer q.unregisterSSEClient(taskCh)
+
+	notify := r.Context().Done()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-notify:
+			return
+		case <-ticker.C:
+			fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
+		case task := <-taskCh:
+			var buf bytes.Buffer
+			if err := tmpl.Execute(&buf, task); err != nil {
+				http.Error(w, "Erro interno", http.StatusInternalServerError)
+				log.Printf("Erro ao carregar template: %v", err)
+				continue
+			}
+
+			eventName := "task-added"
+			if task.Status != "queued" && task.Status != "scheduled" {
+				eventName = "task-updated"
+			}
+
+			fmt.Fprintf(w, "event: %s\n", eventName)
+			fmt.Fprintf(w, "data: %s\n\n", strings.ReplaceAll(buf.String(), "\n", ""))
+			log.Printf("Enviando evento: %s para a tarefa: %s", eventName, task.ID)
+			flusher.Flush()
+		}
+	}
+}
+
+func (q *Queue) GetProcessedTasks() []*interfaces.Task {
+	var processed []*interfaces.Task
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	for _, task := range q.tasks {
+		if task.Status == "completed" || task.Status == "failed" {
+			processed = append(processed, &task)
+		}
+	}
+	return processed
+
+}
+
+func (q *Queue) handleGetProcessedTasks(w http.ResponseWriter) {
+	tasks := q.GetProcessedTasks()
+	fmt.Println(tasks)
+	tmpl := template.Must(template.ParseFiles("web-ui/templates/partials/task-row.html"))
+
+	var buf bytes.Buffer
+	for _, task := range tasks {
+		if err := tmpl.Execute(&buf, task); err != nil {
+			log.Printf("Erro renderizando tarefa %s: %v", task.ID, err)
+			continue
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write(buf.Bytes())
 }
 
 func (q *Queue) ServeUI(addr string, ctx context.Context) {
@@ -170,9 +318,9 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 				Queues any
 				Tasks  any
 			}{
-				Stats:  nil,
-				Queues: nil,
-				Tasks:  nil,
+				Stats:  q.GetStats(),
+				Queues: q.ListQueues(),
+				Tasks:  q.ListTasks(),
 			}
 
 			if err := tmpl.Execute(w, data); err != nil {
@@ -181,55 +329,19 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 			}
 		})
 
-		var rowTmpl = template.Must(template.New("row").Parse(`
-			<tr id="task-{{.ID}}" data-task-id="{{.ID}}" class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-				<td class="px-4 py-2">{{.Status}}</td>
-				<td class="px-4 py-2">{{.ID}} / {{.Name}}</td>
-				<td class="px-4 py-2 text-right">ações</td>
-			</tr>
-		`))
-
 		mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			rowTmpl, err := template.ParseFiles(filepath.Join("web-ui", "templates", "partials", "task-row.html"))
+			if err != nil {
+				http.Error(w, "Erro ao carregar template", http.StatusInternalServerError)
+				log.Println("Erro ao carregar template:", err)
 				return
 			}
 
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("Connection", "keep-alive")
+			q.streamTasks(w, r, rowTmpl)
+		})
 
-			ch := make(chan interfaces.Task)
-			q.registerSSEClient(ch)
-			defer q.unregisterSSEClient(ch)
-
-			notify := r.Context().Done()
-
-			for {
-				select {
-				case <-notify:
-					return
-				case task := <-ch:
-					var buf bytes.Buffer
-					if err := rowTmpl.Execute(&buf, task); err != nil {
-						log.Println("template error:", err)
-						continue
-					}
-
-					eventName := "task-added"
-
-					if task.Status != "queued" && task.Status != "scheduled" {
-						eventName = "task-updated"
-					}
-
-					fmt.Fprintf(w, "event: %s\n", eventName)
-					fmt.Fprintf(w, "data: %s\n\n", strings.ReplaceAll(buf.String(), "\n", ""))
-					log.Printf("Enviando evento: %s para a tarefa: %s", eventName, task.ID)
-
-					flusher.Flush()
-				}
-			}
+		mux.HandleFunc("/tasks", func(w http.ResponseWriter, r *http.Request) {
+			q.handleGetProcessedTasks(w)
 		})
 
 		srv := &http.Server{
@@ -248,6 +360,14 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 			log.Fatalf("Erro ao iniciar UI: %v", err)
 		}
 	}()
+}
+
+func (q *Queue) Subscribe() chan interfaces.Task {
+	taskCh := make(chan interfaces.Task)
+
+	q.registerSSEClient(taskCh)
+
+	return taskCh
 }
 
 func (q *Queue) broadcast(task interfaces.Task) {

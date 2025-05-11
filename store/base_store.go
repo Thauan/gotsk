@@ -10,6 +10,7 @@ type BaseStore struct {
 	mu      sync.Mutex
 	queue   []interfaces.Task
 	pending []interfaces.Task
+	tasks   []interfaces.Task
 }
 
 func (b *BaseStore) LenQueue() int {

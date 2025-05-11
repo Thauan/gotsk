@@ -374,10 +374,16 @@
                             </th>
                           </tr>
                         </thead>
-                        <tbody
+                        <!-- <tbody
                           class="[&amp;_tr:last-child]:border-0"
                           id="task-table-body"
                           hx-swap-oob="beforeend"
+                        ></tbody> -->
+                        <tbody
+                          class="[&amp;_tr:last-child]:border-0"
+                          id="task-table-body"
+                          hx-get="/tasks"
+                          hx-trigger="load"
                         ></tbody>
                       </table>
                     </div>

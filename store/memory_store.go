@@ -4,6 +4,8 @@ import (
 	"errors"
 	"time"
 
+	"slices"
+
 	"github.com/Thauan/gotsk/interfaces"
 )
 
@@ -51,8 +53,16 @@ func (s *MemoryStore) Ack(task interfaces.Task) error {
 	for i, t := range s.pending {
 		if t.Name == task.Name && equalPayload(t.Payload, task.Payload) {
 			s.pending = append(s.pending[:i], s.pending[i+1:]...)
+
+			s.tasks = append(s.tasks, task)
 			return nil
 		}
 	}
 	return errors.New("task not found in pending")
+}
+
+func (s *MemoryStore) Tasks() []interfaces.Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.tasks)
 }
