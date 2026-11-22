@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${UI_HOST_PORT:-18080}:8080"   # painel e /events
+      - "${TRIGGER_HOST_PORT:-19090}:9090"   # gatilho de rajada
+    environment:
+      UI_ADDR: ":8080"
+      TRIGGER_ADDR: ":9090"
+      TASK_DURATION_MS: "${TASK_DURATION_MS:-1500}"
