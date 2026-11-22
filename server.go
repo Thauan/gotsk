@@ -5,20 +5,16 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 )
 
+// Run inicia os workers e o painel em addr, e encerra de forma ordenada
+// com SIGINT ou SIGTERM.
 func Run(queue *Queue, addr string) {
-	ctx, _ := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		queue.ServeUI(addr, ctx)
-	}()
-
+	queue.ServeUI(addr, ctx)
 	queue.Start()
 
 	sig := make(chan os.Signal, 1)
@@ -27,6 +23,7 @@ func Run(queue *Queue, addr string) {
 	<-sig
 	log.Println("🔴 Encerrando...")
 
+	cancel()
 	queue.Stop()
 	log.Println("✅ Finalizado com sucesso")
 }

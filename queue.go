@@ -1,20 +1,15 @@
 package gotsk
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"html/template"
 	"log"
-	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/middlewares"
 )
 
 type HandlerFunc interfaces.HandlerFunc
@@ -30,14 +25,12 @@ type Queue struct {
 	done         chan bool
 	maxRetries   int
 	middlewares  []interfaces.Middleware
-	history      []interfaces.Task
-	tasks        map[string]interfaces.Task
-	queues       map[string][]string
+	repo         interfaces.HistoryRepository
+	paused       atomic.Bool
+	startedAt    atomic.Int64 // unix nano; 0 = não iniciada
 	sseClients   map[chan interfaces.Task]bool
 	sseClientsMu sync.Mutex
 }
-
-var UIPath string
 
 func (q *Queue) Use(mw interfaces.Middleware) {
 	q.middlewares = append(q.middlewares, mw)
@@ -89,7 +82,7 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 		return err
 	}
 
-	q.broadcast(task)
+	q.publish(task)
 
 	return nil
 }
@@ -116,7 +109,74 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 // 	return q.store.Push(task)
 // }
 
+// ErrNoHistory é retornado por operações que dependem do histórico.
+var ErrNoHistory = errors.New("histórico não configurado")
+
+// Pause faz os workers pararem de pegar tasks novas. As tasks em execução
+// terminam normalmente, e Enqueue continua aceitando trabalho.
+func (q *Queue) Pause() { q.paused.Store(true) }
+
+// Resume volta a processar as tasks pendentes.
+func (q *Queue) Resume() { q.paused.Store(false) }
+
+func (q *Queue) Paused() bool { return q.paused.Load() }
+
+// Uptime é o tempo desde Start. Zero se a fila não foi iniciada.
+func (q *Queue) Uptime() time.Duration {
+	started := q.startedAt.Load()
+	if started == 0 {
+		return 0
+	}
+	return time.Since(time.Unix(0, started))
+}
+
+// RequeueTask reenfileira uma falha específica e remove o registro antigo.
+func (q *Queue) RequeueTask(ctx context.Context, id string) error {
+	if q.repo == nil {
+		return ErrNoHistory
+	}
+	t, err := q.repo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if t.Status != "failed" {
+		return fmt.Errorf("task %s não está com falha (status: %s)", id, t.Status)
+	}
+	if err := q.Enqueue(t.Name, t.Payload); err != nil {
+		return err
+	}
+	return q.repo.Delete(ctx, id)
+}
+
+// maxRequeue limita quantas falhas são reenfileiradas por chamada.
+const maxRequeue = 10000
+
+// RequeueFailed reenfileira as tasks com falha do histórico e remove o
+// registro antigo. Tasks cujo handler não está mais registrado são puladas e
+// continuam marcadas como falha.
+func (q *Queue) RequeueFailed(ctx context.Context) (requeued, skipped int, err error) {
+	if q.repo == nil {
+		return 0, 0, ErrNoHistory
+	}
+	failed, err := q.repo.List(ctx, interfaces.HistoryFilter{Status: "failed", Limit: maxRequeue})
+	if err != nil {
+		return 0, 0, fmt.Errorf("listando falhas: %w", err)
+	}
+	for _, t := range failed {
+		if err := q.Enqueue(t.Name, t.Payload); err != nil {
+			skipped++
+			continue
+		}
+		if err := q.repo.Delete(ctx, t.ID); err != nil {
+			return requeued, skipped, fmt.Errorf("removendo falha antiga %s: %w", t.ID, err)
+		}
+		requeued++
+	}
+	return requeued, skipped, nil
+}
+
 func (q *Queue) Start() {
+	q.startedAt.Store(time.Now().UnixNano())
 	for range q.workers {
 		q.wg.Add(1)
 		go q.worker()
@@ -148,62 +208,9 @@ func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options inter
 		return err
 	}
 
-	q.broadcast(task)
+	q.publish(task)
 
 	return nil
-}
-
-func (q *Queue) ListTasks() []interfaces.Task {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-
-	tasks := make([]interfaces.Task, 0, len(q.tasks))
-	for _, task := range q.tasks {
-		tasks = append(tasks, task)
-	}
-	return tasks
-}
-
-func (q *Queue) ListQueues() map[string]int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-
-	result := make(map[string]int)
-	for queueName, taskIDs := range q.queues {
-		result[queueName] = len(taskIDs)
-	}
-	return result
-}
-
-func (q *Queue) GetStats() map[string]int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-
-	stats := map[string]int{
-		"total":    len(q.tasks),
-		"queued":   0,
-		"running":  0,
-		"done":     0,
-		"failed":   0,
-		"canceled": 0,
-	}
-
-	for _, task := range q.tasks {
-		switch task.Status {
-		case "queued":
-			stats["queued"]++
-		case "running":
-			stats["running"]++
-		case "done":
-			stats["done"]++
-		case "failed":
-			stats["failed"]++
-		case "canceled":
-			stats["canceled"]++
-		}
-	}
-
-	return stats
 }
 
 func (q *Queue) registerSSEClient(ch chan interfaces.Task) {
@@ -223,145 +230,6 @@ func (q *Queue) unregisterSSEClient(ch chan interfaces.Task) {
 	close(ch)
 }
 
-func (q *Queue) streamTasks(w http.ResponseWriter, r *http.Request, tmpl *template.Template) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming não suportado", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	taskCh := q.Subscribe()
-	defer q.unregisterSSEClient(taskCh)
-
-	notify := r.Context().Done()
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-notify:
-			return
-		case <-ticker.C:
-			fmt.Fprint(w, ": ping\n\n")
-			flusher.Flush()
-		case task := <-taskCh:
-			var buf bytes.Buffer
-			if err := tmpl.Execute(&buf, task); err != nil {
-				http.Error(w, "Erro interno", http.StatusInternalServerError)
-				log.Printf("Erro ao carregar template: %v", err)
-				continue
-			}
-
-			eventName := "task-added"
-			if task.Status != "queued" && task.Status != "scheduled" {
-				eventName = "task-updated"
-			}
-
-			fmt.Fprintf(w, "event: %s\n", eventName)
-			fmt.Fprintf(w, "data: %s\n\n", strings.ReplaceAll(buf.String(), "\n", ""))
-			log.Printf("Enviando evento: %s para a tarefa: %s", eventName, task.ID)
-			flusher.Flush()
-		}
-	}
-}
-
-func (q *Queue) GetProcessedTasks() []*interfaces.Task {
-	var processed []*interfaces.Task
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	for _, task := range q.tasks {
-		if task.Status == "completed" || task.Status == "failed" {
-			processed = append(processed, &task)
-		}
-	}
-	return processed
-
-}
-
-func (q *Queue) handleGetProcessedTasks(w http.ResponseWriter) {
-	tasks := q.GetProcessedTasks()
-	fmt.Println(tasks)
-	tmpl := template.Must(template.ParseFiles("web-ui/templates/partials/task-row.html"))
-
-	var buf bytes.Buffer
-	for _, task := range tasks {
-		if err := tmpl.Execute(&buf, task); err != nil {
-			log.Printf("Erro renderizando tarefa %s: %v", task.ID, err)
-			continue
-		}
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(buf.Bytes())
-}
-
-func (q *Queue) ServeUI(addr string, ctx context.Context) {
-	go func() {
-		mux := http.NewServeMux()
-
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			tmplPath := filepath.Join("web-ui", "templates", "task-dashboard.html")
-			tmpl, err := template.ParseFiles(tmplPath)
-			if err != nil {
-				http.Error(w, "Erro ao carregar template", http.StatusInternalServerError)
-				log.Println("Erro ao carregar template:", err)
-				return
-			}
-
-			data := struct {
-				Stats  any
-				Queues any
-				Tasks  any
-			}{
-				Stats:  q.GetStats(),
-				Queues: q.ListQueues(),
-				Tasks:  q.ListTasks(),
-			}
-
-			if err := tmpl.Execute(w, data); err != nil {
-				http.Error(w, "Erro ao renderizar template", http.StatusInternalServerError)
-				log.Println("Erro ao renderizar:", err)
-			}
-		})
-
-		mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
-			rowTmpl, err := template.ParseFiles(filepath.Join("web-ui", "templates", "partials", "task-row.html"))
-			if err != nil {
-				http.Error(w, "Erro ao carregar template", http.StatusInternalServerError)
-				log.Println("Erro ao carregar template:", err)
-				return
-			}
-
-			q.streamTasks(w, r, rowTmpl)
-		})
-
-		mux.HandleFunc("/tasks", func(w http.ResponseWriter, r *http.Request) {
-			q.handleGetProcessedTasks(w)
-		})
-
-		srv := &http.Server{
-			Addr:    addr,
-			Handler: middlewares.HTTPLoggingMiddleware(log.New(os.Stdout, "", log.LstdFlags))(mux),
-		}
-
-		go func() {
-			<-ctx.Done()
-			log.Println("🛑 Encerrando servidor UI...")
-			srv.Shutdown(context.Background())
-		}()
-
-		log.Printf("🌐 Servindo UI em http://%s", addr)
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("Erro ao iniciar UI: %v", err)
-		}
-	}()
-}
-
 // sseClientBuffer é o número de eventos que podem ficar pendentes para um
 // cliente SSE. Sem buffer, qualquer rajada perde eventos enquanto o streamer
 // está escrevendo na conexão.
@@ -373,6 +241,28 @@ func (q *Queue) Subscribe() chan interfaces.Task {
 	q.registerSSEClient(taskCh)
 
 	return taskCh
+}
+
+// SetHistory liga a persistência do histórico. Sem ele, a UI mostra só os
+// eventos ao vivo e as contagens ficam zeradas.
+func (q *Queue) SetHistory(repo interfaces.HistoryRepository) {
+	q.repo = repo
+}
+
+// publish envia a mudança de estado para a UI em tempo real e, se houver
+// histórico configurado, grava o estado atual da task.
+func (q *Queue) publish(task interfaces.Task) {
+	q.broadcast(task)
+
+	if q.repo == nil {
+		return
+	}
+	// Background: mesmo após Stop, os últimos estados precisam ser gravados.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := q.repo.Save(ctx, task); err != nil {
+		log.Printf("erro ao salvar histórico da task %s: %v", task.ID, err)
+	}
 }
 
 func (q *Queue) broadcast(task interfaces.Task) {

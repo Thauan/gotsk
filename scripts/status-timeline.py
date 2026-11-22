@@ -5,8 +5,8 @@ do ponto de vista do cliente SSE (o que o painel recebe, e quando).
 Uso: python3 scripts/status-timeline.py [N]
 Variáveis: UI (padrão http://localhost:18080), TRIGGER (padrão http://localhost:19090)
 """
+import json
 import os
-import re
 import sys
 import threading
 import time
@@ -17,8 +17,6 @@ N = int(sys.argv[1]) if len(sys.argv) > 1 else 10
 UI = os.environ.get("UI", "http://localhost:18080")
 TRIGGER = os.environ.get("TRIGGER", "http://localhost:19090")
 
-ROW_ID = re.compile(r'data-task-id="([^"]+)"')
-STATUS = re.compile(r"<td[^>]*>\s*([a-z]+)\s*</td>")
 
 events = []  # (t, event_name, task_id, status)
 lock = threading.Lock()
@@ -35,12 +33,13 @@ def listen():
             if line.startswith("event:"):
                 name = line[len("event:"):].strip()
             elif line.startswith("data:") and name:
-                data = line[len("data:"):].strip()
-                tid = ROW_ID.search(data)
-                st = STATUS.search(data)
-                if tid and st:
+                try:
+                    msg = json.loads(line[len("data:"):].strip())
+                except ValueError:
+                    msg = None
+                if msg and "id" in msg and "status" in msg:
                     with lock:
-                        events.append((time.monotonic(), name, tid.group(1), st.group(1)))
+                        events.append((time.monotonic(), name, msg["id"], msg["status"]))
                 name = None
 
 

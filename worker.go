@@ -19,6 +19,10 @@ func (q *Queue) worker() {
 			log.Printf("🛑 Worker %s encerrado", workerID)
 			return
 		default:
+			if q.paused.Load() {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
 			task, err := q.store.Pop()
 			if err != nil {
 				time.Sleep(500 * time.Millisecond)
@@ -55,26 +59,45 @@ func (q *Queue) process(task interfaces.Task, workerID string) {
 	log.Printf("🚀 Worker %s: processando task %s (%s)", workerID, task.ID, task.Name)
 
 	task.Status = "running"
-	q.broadcast(task)
+	task.WorkerID = workerID
+	task.StartedAt = time.Now()
+	q.publish(task)
 
-	var err error
 	for attempt := 0; attempt <= q.maxRetries; attempt++ {
-		err = handler(q.ctx, task.Payload)
+		started := time.Now()
+		err := handler(q.ctx, task.Payload)
+		record := interfaces.Attempt{
+			Number:     attempt + 1,
+			StartedAt:  started,
+			FinishedAt: time.Now(),
+			WorkerID:   workerID,
+		}
 
 		if err == nil {
+			task.Attempts = append(task.Attempts, record)
 			task.Status = "completed"
+			task.FinishedAt = record.FinishedAt
+			task.Error = ""
 			q.store.Ack(task)
-			q.broadcast(task)
+			q.publish(task)
 			log.Printf("✅ Worker %s: task %s concluída", workerID, task.ID)
 			return
 		}
 
+		record.Error = err.Error()
+		task.Attempts = append(task.Attempts, record)
+		task.Error = record.Error
 		log.Printf("❌ Worker %s: task %s falhou (tentativa %d): %v", workerID, task.ID, attempt+1, err)
+		if attempt < q.maxRetries {
+			task.Retries = attempt + 1
+			q.publish(task)
+		}
 		time.Sleep(simpleBackoff(attempt))
 	}
 
 	task.Status = "failed"
-	q.broadcast(task)
+	task.FinishedAt = time.Now()
+	q.publish(task)
 
 	log.Printf("💥 Worker %s: task %s falhou após %d tentativas", workerID, task.ID, q.maxRetries+1)
 }

@@ -1,9 +1,13 @@
-<tr
-  id="{{.ID}}"
-  data-task-id="{{.ID}}"
-  class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
->
-  <td class="px-4 py-2">{{.Status}}</td>
-  <td class="px-4 py-2">{{.ID}} / {{.Name}}</td>
-  <td class="px-4 py-2 text-right">ações</td>
+{{define "task-row"}}
+<tr data-task-id="{{.ID}}" class="hover:bg-gray-50">
+  <td class="px-4 py-3">
+    <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{.StatusClass}}">{{.StatusLabel}}</span>
+  </td>
+  <td class="px-4 py-3">
+    <a href="/tasks/{{.ID}}" class="font-mono text-xs text-gray-500 hover:text-gray-900 hover:underline">{{.ID}}</a>
+    <div class="font-medium">{{.Name}}</div>
+  </td>
+  <td class="px-4 py-3 tabular-nums">{{.Retries}}</td>
+  <td class="px-4 py-3 tabular-nums text-gray-500">{{.CreatedAt}}</td>
 </tr>
+{{end}}

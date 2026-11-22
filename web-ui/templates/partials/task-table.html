@@ -1,0 +1,7 @@
+{{define "task-table"}}
+{{range .Tasks}}{{template "task-row" .}}{{else}}
+<tr>
+  <td colspan="4" class="px-4 py-10 text-center text-gray-500">Nenhuma tarefa encontrada.</td>
+</tr>
+{{end}}
+{{end}}

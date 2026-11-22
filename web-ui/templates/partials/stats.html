@@ -1,0 +1,22 @@
+{{define "stats"}}
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">Concluídas</p>
+  <p class="mt-2 text-3xl font-bold">{{.Completed}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">Falhas</p>
+  <p class="mt-2 text-3xl font-bold text-red-600">{{.Failed}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">Pendentes</p>
+  <p class="mt-2 text-3xl font-bold">{{.Queued}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">Retentativas</p>
+  <p class="mt-2 text-3xl font-bold">{{.Retried}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">Agendadas</p>
+  <p class="mt-2 text-3xl font-bold">{{.Scheduled}}</p>
+</div>
+{{end}}

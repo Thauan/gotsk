@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-gray-50">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gotsk · Configurações</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-full text-gray-900">
+    <main class="mx-auto max-w-4xl p-6 md:p-8">
+      <h1 class="mb-4 text-2xl font-bold">Gotsk</h1>
+      {{template "nav" "settings"}}
+
+      {{if .Flash}}
+      <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">
+        {{.Flash}}
+      </div>
+      {{end}}
+
+      <div class="space-y-6">
+        <section class="rounded-lg border border-gray-200 bg-white p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-semibold">Processamento</h2>
+              <p class="mt-1 text-sm text-gray-500">
+                Pausar impede os workers de pegar tasks novas. As que já estão rodando terminam, e novas tasks continuam entrando na fila.
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              {{if .Paused}}
+              <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">Pausado</span>
+              <form method="post" action="/settings/resume"><button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Retomar</button></form>
+              {{else}}
+              <span class="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800">Ativo</span>
+              <form method="post" action="/settings/pause"><button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">Pausar</button></form>
+              {{end}}
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-gray-200 bg-white p-6">
+          <h2 class="text-lg font-semibold">Falhas</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Reenfileira todas as tasks com falha. Cada uma volta para a fila como nova task, e o registro antigo é removido do histórico.
+            Hoje há <strong>{{.Counts.Failed}}</strong> falha(s).
+          </p>
+          <form method="post" action="/settings/failed/requeue" class="mt-4"
+                onsubmit="return confirm('Reenfileirar {{.Counts.Failed}} falha(s)?')">
+            <button {{if or (not .HasHistory) (eq .Counts.Failed 0)}}disabled{{end}}
+                    class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">
+              Reenfileirar falhas
+            </button>
+          </form>
+        </section>
+
+        <section class="rounded-lg border border-red-200 bg-white p-6">
+          <h2 class="text-lg font-semibold text-red-700">Limpar histórico</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Remove registros do histórico. Não afeta tasks que ainda estão na fila nem as que estão rodando.
+            Esta ação não pode ser desfeita.
+          </p>
+          <div class="mt-4 flex flex-wrap gap-3">
+            {{$disabled := not .HasHistory}}
+            <form method="post" action="/settings/history/purge"
+                  onsubmit="return confirm('Remover {{.Counts.Completed}} tarefa(s) concluída(s) do histórico?')">
+              <input type="hidden" name="scope" value="completed" />
+              <input type="hidden" name="confirm" value="yes" />
+              <button {{if $disabled}}disabled{{end}} class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-50">
+                Concluídas ({{.Counts.Completed}})
+              </button>
+            </form>
+            <form method="post" action="/settings/history/purge"
+                  onsubmit="return confirm('Remover {{.Counts.Failed}} tarefa(s) com falha do histórico?')">
+              <input type="hidden" name="scope" value="failed" />
+              <input type="hidden" name="confirm" value="yes" />
+              <button {{if $disabled}}disabled{{end}} class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-50">
+                Falhas ({{.Counts.Failed}})
+              </button>
+            </form>
+            <form method="post" action="/settings/history/purge"
+                  onsubmit="return confirm('Apagar TODO o histórico? Esta ação não pode ser desfeita.')">
+              <input type="hidden" name="scope" value="all" />
+              <input type="hidden" name="confirm" value="yes" />
+              <button {{if $disabled}}disabled{{end}} class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                Apagar tudo
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-gray-200 bg-white p-6">
+          <h2 class="text-lg font-semibold">Informações</h2>
+          <dl class="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+            <div><dt class="text-gray-500">Workers</dt><dd class="font-medium">{{.Workers}}</dd></div>
+            <div><dt class="text-gray-500">Em execução há</dt><dd class="font-medium">{{.Uptime}}</dd></div>
+            <div><dt class="text-gray-500">Histórico</dt><dd class="font-medium">{{if .HasHistory}}{{.Backend}}{{else}}desativado{{end}}</dd></div>
+            <div><dt class="text-gray-500">Tasks no histórico</dt><dd class="font-medium">{{.Counts.Queued}} pendentes · {{.Counts.Running}} rodando · {{.Counts.Completed}} concluídas · {{.Counts.Failed}} falhas</dd></div>
+          </dl>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

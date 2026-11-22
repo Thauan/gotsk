@@ -6,10 +6,11 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/repro ./cmd/repro
 
 FROM alpine:3.20
+# ca-certificates: necessário para falar com a AWS (DynamoDB) por HTTPS.
+RUN apk add --no-cache ca-certificates && mkdir -p /data
 WORKDIR /app
 COPY --from=build /out/repro /app/repro
-# Os templates são lidos por caminho relativo ("web-ui/templates"),
-# então o diretório de execução precisa conter essa pasta.
-COPY web-ui/templates /app/web-ui/templates
+ENV SQLITE_PATH=/data/gotsk.db
+VOLUME ["/data"]
 EXPOSE 8080 9090
 CMD ["/app/repro"]
