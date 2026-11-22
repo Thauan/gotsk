@@ -17,8 +17,15 @@
 
 ## 🚀 Installation
 
+The core has few dependencies. Adapters are separate modules: install only what you use.
+
 ```bash
-go get github.com/Thauan/gotsk
+go get github.com/Thauan/gotsk                   # core: queue, memory store and dashboard
+go get github.com/Thauan/gotsk/store/redis       # Redis store
+go get github.com/Thauan/gotsk/store/sqs         # SQS store
+go get github.com/Thauan/gotsk/middlewares/zap   # zap logging
+go get github.com/Thauan/gotsk/history/sqlite    # dashboard history in SQLite
+go get github.com/Thauan/gotsk/history/dynamodb  # dashboard history in DynamoDB
 ```
 
 ## Usage Examples
@@ -51,34 +58,18 @@ time.Sleep(5 * time.Second)
 ### 🛠️ Redis
 
 ```go
-store := gotsk.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
+import redisstore "github.com/Thauan/gotsk/store/redis"
+
+store := redisstore.New("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
 ### 🛠️ SQS
 
 ```go
-ctx := context.Background()
+import sqsstore "github.com/Thauan/gotsk/store/sqs"
 
-cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
-
-if err != nil {
-	log.Fatalf("failed to load AWS config: %v", err)
-}
-
-client := sqs.NewFromConfig(cfg)
-
-logger, err := zap.NewDevelopment()
-if err != nil {
-	log.Fatalf("Failed to initialize logger: %v", err)
-}
-defer logger.Sync()
-
-store := interfaces.NewSQSStore(
-	client,
-	"https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
-)
-
+store := sqsstore.New(client, "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
@@ -89,24 +80,41 @@ queue := gotsk.NewWithStore(4, store)
 ```go
 logger := log.New(os.Stderr, "", log.LstdFlags)
 
-queue := gotsk.NewWithStore(4, store.NewMemoryStore())
+queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 queue.Use(middlewares.LoggingMiddleware(logger))
 ```
 
 ### 🛠️ [uber-go/zap](https://github.com/uber-go/zap)
 
 ```go
+import zapmw "github.com/Thauan/gotsk/middlewares/zap"
+
 logger, err := zap.NewDevelopment()
 if err != nil {
-	log.Fatalf("Failed to initialize logger: %v", err)
+	log.Fatalf("Error initializing logger: %v", err)
 }
-
 defer logger.Sync()
 
-store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
-queue := gotsk.NewWithStore(4, store)
-queue.Use(middlewares.ZapLoggingMiddleware(logger))
+queue.Use(zapmw.LoggingMiddleware(logger))
 ```
+
+## 🖥️ Web dashboard
+
+The dashboard shows tasks, settings and the details of each execution. It is served by `gotsk.Run`. To see history, configure a repository:
+
+```go
+import "github.com/Thauan/gotsk/history/sqlite"
+
+repo, err := sqlite.Open("file:gotsk.db")
+if err != nil {
+	log.Fatal(err)
+}
+queue.SetHistory(repo)
+
+gotsk.Run(queue, ":8080") // dashboard at http://localhost:8080
+```
+
+Without `SetHistory` the queue works normally, and the dashboard only shows a notice that history is disabled.
 
 ## ✅ Roadmap (future ideas)
 

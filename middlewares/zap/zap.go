@@ -1,4 +1,6 @@
-package middlewares
+// Package zapmw fornece um middleware de log com uber-go/zap.
+// Fica em um módulo separado para que o zap só entre em quem o usa.
+package zapmw
 
 import (
 	"context"
@@ -8,7 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func ZapLoggingMiddleware(logger *zap.Logger) interfaces.Middleware {
+// LoggingMiddleware registra início, fim e duração de cada task com zap.
+func LoggingMiddleware(logger *zap.Logger) interfaces.Middleware {
 	return func(next interfaces.HandlerFunc) interfaces.HandlerFunc {
 		return func(ctx context.Context, payload interfaces.Payload) error {
 			start := time.Now()

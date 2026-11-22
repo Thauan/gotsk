@@ -5,29 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gotsk · Tarefas</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    {{template "sidebar-assets"}}
   </head>
   <body class="h-full text-gray-900">
     <div class="flex min-h-screen">
-      <aside class="hidden w-64 shrink-0 flex-col border-r border-gray-200 bg-white p-6 md:flex">
-        <h1 class="text-2xl font-bold">Gotsk</h1>
+      <aside id="sidebar" class="hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+        {{template "sidebar" "tasks"}}
 
-        <h2 class="mt-8 text-xs font-semibold uppercase tracking-wide text-gray-500">Período</h2>
-        <nav class="mt-2 flex flex-col gap-1">
-          {{range .Periods}}
-          <a href="{{.Href}}"
-             class="rounded-md px-3 py-2 text-sm {{if .Active}}bg-gray-900 text-white{{else}}text-gray-700 hover:bg-gray-100{{end}}">{{.Label}}</a>
-          {{end}}
-        </nav>
-
-        <button id="refresh"
-                class="mt-auto rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">
-          Atualizar dados
+        <button id="refresh" title="Atualizar dados"
+                class="nav-action mt-auto flex items-center justify-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">
+          <i aria-hidden="true" class="fa-solid fa-rotate"></i><span class="label">Atualizar dados</span>
         </button>
-        <p id="live" class="mt-2 text-center text-xs text-gray-500">conectando ao vivo…</p>
+        <p id="live" class="label mt-2 text-center text-xs text-gray-500">conectando ao vivo…</p>
       </aside>
 
-      <main class="flex-1 p-6 md:p-8">
-        {{template "nav" "tasks"}}
+      <main id="main" class="min-w-0 flex-1 p-6 md:p-8 transition-opacity">
         {{if .Flash}}
         <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">{{.Flash}}</div>
         {{end}}
@@ -44,17 +36,35 @@
         <div class="mt-8 flex flex-wrap items-center justify-between gap-4">
           <nav class="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-1">
             {{range .Tabs}}
-            <a href="{{.Href}}"
+            <a href="{{.Href}}" data-spa
                class="rounded-md px-3 py-1.5 text-sm {{if .Active}}bg-white font-medium shadow-sm{{else}}text-gray-600 hover:text-gray-900{{end}}">{{.Label}}</a>
             {{end}}
           </nav>
 
-          <form method="get" action="/" class="flex items-center gap-2">
-            {{if .Status}}<input type="hidden" name="status" value="{{.Status}}" />{{end}}
-            {{if ne .Period "all"}}<input type="hidden" name="period" value="{{.Period}}" />{{end}}
-            <input type="search" name="q" value="{{.Search}}" placeholder="Buscar tarefas…"
-                   class="w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
-          </form>
+          <div class="flex items-center gap-2">
+            <details class="menu relative">
+              <summary class="flex cursor-pointer list-none select-none items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50">
+                <i class="fa-solid fa-filter text-gray-500" aria-hidden="true"></i>
+                {{range .Periods}}{{if .Active}}<span>{{.Label}}</span>{{end}}{{end}}
+              </summary>
+              <div class="absolute right-0 z-20 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
+                <p class="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Período</p>
+                {{range .Periods}}
+                <a href="{{.Href}}" data-spa class="flex items-center justify-between px-4 py-2 hover:bg-gray-100 {{if .Active}}font-medium text-gray-900{{else}}text-gray-600{{end}}">
+                  {{.Label}}
+                  {{if .Active}}<i class="fa-solid fa-check text-gray-900" aria-hidden="true"></i>{{end}}
+                </a>
+                {{end}}
+              </div>
+            </details>
+
+            <form method="get" action="/" id="search-form">
+              {{if .Status}}<input type="hidden" name="status" value="{{.Status}}" />{{end}}
+              {{if ne .Period "all"}}<input type="hidden" name="period" value="{{.Period}}" />{{end}}
+              <input type="search" name="q" id="search" value="{{.Search}}" placeholder="Buscar tarefas…"
+                     class="w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
+            </form>
+          </div>
         </div>
 
         <div class="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -65,6 +75,7 @@
                 <th class="px-4 py-3 font-medium">ID / Nome</th>
                 <th class="px-4 py-3 font-medium">Tentativas</th>
                 <th class="px-4 py-3 font-medium">Criada em</th>
+                <th class="px-4 py-3 text-right font-medium">Ações</th>
               </tr>
             </thead>
             <tbody id="task-table" class="divide-y divide-gray-100">
@@ -77,25 +88,101 @@
 
     <script>
       (() => {
-        const tableEl = document.getElementById("task-table");
-        const statsEl = document.getElementById("stats");
-        const liveEl = document.getElementById("live");
         let timer = null;
+        let pending = false;
 
-        // Recarrega tabela e cards a partir do histórico. Várias mudanças de
-        // estado em sequência viram um único recarregamento.
+        const menuOpen = () => document.querySelector("details.menu[open]") !== null;
+        const main = () => document.getElementById("main");
+        const statsEl = () => document.getElementById("stats");
+        const tableEl = () => document.getElementById("task-table");
+        const liveEl = () => document.getElementById("live");
+
+        // Recarrega tabela e cards a partir do histórico. Várias mudanças em
+        // sequência viram um único recarregamento. Com um menu de ações aberto,
+        // a tabela não é trocada (senão o menu fecharia no meio do clique):
+        // o recarregamento fica pendente até o menu fechar.
         const refresh = () => {
           clearTimeout(timer);
           timer = setTimeout(async () => {
+            if (menuOpen()) {
+              pending = true;
+              return;
+            }
+            pending = false;
             const qs = location.search;
             const [rows, stats] = await Promise.all([
               fetch("/tasks" + qs).then((r) => r.text()),
               fetch("/stats" + qs).then((r) => r.text()),
             ]);
-            tableEl.innerHTML = rows;
-            statsEl.innerHTML = stats;
+            if (menuOpen()) {
+              pending = true;
+              return;
+            }
+            tableEl().innerHTML = rows;
+            statsEl().innerHTML = stats;
           }, 250);
         };
+
+        // Navegação sem recarregar a página: busca o HTML da tela de destino e
+        // troca só o conteúdo principal. A sidebar, o Tailwind e o Font Awesome
+        // continuam carregados.
+        const navigate = async (url, mode = "push") => {
+          main().classList.add("opacity-60");
+          try {
+            const res = await fetch(url, { headers: { Accept: "text/html" } });
+            if (!res.ok) throw new Error(res.status);
+            const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+            const next = doc.getElementById("main");
+            if (!next) throw new Error("resposta sem conteúdo principal");
+            main().replaceWith(next);
+            document.title = doc.title;
+            if (mode === "push") history.pushState({}, "", url);
+            if (mode === "replace") history.replaceState({}, "", url);
+          } catch (err) {
+            location.href = url; // sem JS ou com erro: navegação comum
+          }
+        };
+
+        // Links marcados com data-spa (abas e período) usam navegação parcial.
+        document.addEventListener("click", (e) => {
+          const link = e.target.closest("a[data-spa]");
+          if (link && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+            e.preventDefault();
+            navigate(link.getAttribute("href"));
+            return;
+          }
+          // Clique fora de um menu fecha o menu aberto.
+          document.querySelectorAll("details.menu[open]").forEach((d) => {
+            if (!d.contains(e.target)) d.removeAttribute("open");
+          });
+        });
+
+        // Busca: Enter envia; digitar aplica com atraso, sem criar entradas no histórico.
+        const searchUrl = (q) => {
+          const url = new URL(location.href);
+          url.pathname = "/";
+          if (q) url.searchParams.set("q", q); else url.searchParams.delete("q");
+          return url.pathname + url.search;
+        };
+        let searchTimer = null;
+        document.addEventListener("submit", (e) => {
+          if (e.target.id !== "search-form") return;
+          e.preventDefault();
+          navigate(searchUrl(document.getElementById("search").value));
+        });
+        document.addEventListener("input", (e) => {
+          if (e.target.id !== "search") return;
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => navigate(searchUrl(e.target.value), "replace"), 400);
+        });
+
+        // Voltar/avançar do navegador.
+        window.addEventListener("popstate", () => navigate(location.pathname + location.search, "none"));
+
+        // Ao fechar o menu, aplica o recarregamento que ficou pendente.
+        document.addEventListener("toggle", (e) => {
+          if (!e.target.open && pending) refresh();
+        }, true);
 
         document.getElementById("refresh").addEventListener("click", refresh);
 
@@ -105,11 +192,11 @@
           const source = new EventSource("/events");
           source.onopen = () => {
             delay = 1000;
-            liveEl.textContent = "ao vivo";
+            liveEl().textContent = "ao vivo";
           };
           source.addEventListener("task", refresh);
           source.onerror = () => {
-            liveEl.textContent = "reconectando…";
+            liveEl().textContent = "reconectando…";
             source.close();
             setTimeout(connect, delay);
             delay = Math.min(delay * 2, 10000);
@@ -118,5 +205,6 @@
         connect();
       })();
     </script>
+  {{template "sidebar-script"}}
   </body>
 </html>

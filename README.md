@@ -9,7 +9,7 @@
 
 - Execução assíncrona com múltiplos workers utilizando goroutines
 - Registro de handlers por nome
-- Suporte a múltiplos mecanismos de armazenamento de tarefas (`MemoryStore`, `RedisStore`, `SQSStore`)
+- Suporte a múltiplos mecanismos de armazenamento de tarefas (`MemoryStore`, `redis.Store`, `sqs.Store`)
 - Suporte a logs com middleware padrão e integração com [uber-go/zap](https://github.com/uber-go/zap)
 - Retry automático com backoff exponencial
 - Interface extensível para armazenamento (permite criar novos adapters)
@@ -18,8 +18,15 @@
 
 ## 🚀 Instalação
 
+O núcleo tem poucas dependências. Os adaptadores são módulos separados: instale só o que você usa.
+
 ```bash
-go get github.com/Thauan/gotsk
+go get github.com/Thauan/gotsk                   # núcleo: fila, memória e painel
+go get github.com/Thauan/gotsk/store/redis       # store Redis
+go get github.com/Thauan/gotsk/store/sqs         # store SQS
+go get github.com/Thauan/gotsk/middlewares/zap   # logging com zap
+go get github.com/Thauan/gotsk/history/sqlite    # histórico do painel em SQLite
+go get github.com/Thauan/gotsk/history/dynamodb  # histórico do painel em DynamoDB
 ```
 
 ## Exemplos de uso
@@ -52,34 +59,18 @@ time.Sleep(5 * time.Second)
 ### 🛠️ Redis
 
 ```go
-store := gotsk.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
+import redisstore "github.com/Thauan/gotsk/store/redis"
+
+store := redisstore.New("localhost:6379", "", 0, "gotsk:queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
 ### 🛠️ SQS
 
 ```go
-ctx := context.Background()
+import sqsstore "github.com/Thauan/gotsk/store/sqs"
 
-cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
-
-if err != nil {
-	log.Fatalf("failed to load AWS config: %v", err)
-}
-
-client := sqs.NewFromConfig(cfg)
-
-logger, err := zap.NewDevelopment()
-if err != nil {
-	log.Fatalf("Erro ao inicializar o logger: %v", err)
-}
-defer logger.Sync()
-
-store := interfaces.NewSQSStore(
-	client,
-	"https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
-)
-
+store := sqsstore.New(client, "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue")
 queue := gotsk.NewWithStore(4, store)
 ```
 
@@ -90,24 +81,41 @@ queue := gotsk.NewWithStore(4, store)
 ```go
 logger := log.New(os.Stderr, "", log.LstdFlags)
 
-queue := gotsk.NewWithStore(4, store.NewMemoryStore())
+queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 queue.Use(middlewares.LoggingMiddleware(logger))
 ```
 
 ### 🛠️ [uber-go/zap](https://github.com/uber-go/zap)
 
 ```go
+import zapmw "github.com/Thauan/gotsk/middlewares/zap"
+
 logger, err := zap.NewDevelopment()
 if err != nil {
 	log.Fatalf("Erro ao inicializar o logger: %v", err)
 }
-
 defer logger.Sync()
 
-store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
-queue := gotsk.NewWithStore(4, store)
-queue.Use(middlewares.ZapLoggingMiddleware(logger))
+queue.Use(zapmw.LoggingMiddleware(logger))
 ```
+
+## 🖥️ Painel web
+
+O painel mostra tarefas, configurações e o detalhe de cada execução. Ele é servido pelo próprio `gotsk.Run`. Para ver o histórico, configure um repositório:
+
+```go
+import "github.com/Thauan/gotsk/history/sqlite"
+
+repo, err := sqlite.Open("file:gotsk.db")
+if err != nil {
+	log.Fatal(err)
+}
+queue.SetHistory(repo)
+
+gotsk.Run(queue, ":8080") // painel em http://localhost:8080
+```
+
+Sem `SetHistory`, a fila funciona normalmente e o painel mostra só o aviso de histórico desativado.
 
 ## ✅ Roadmap (ideias futuras)
 

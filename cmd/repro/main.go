@@ -29,7 +29,6 @@ import (
 	"github.com/Thauan/gotsk/history/dynamodb"
 	"github.com/Thauan/gotsk/history/sqlite"
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/store"
 )
 
 func env(key, def string) string {
@@ -68,7 +67,7 @@ func openHistory() (interfaces.HistoryRepository, error) {
 }
 
 func main() {
-	queue := gotsk.NewWithStore(4, store.NewMemoryStore())
+	queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 
 	history, err := openHistory()
 	if err != nil {

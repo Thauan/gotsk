@@ -9,13 +9,12 @@ import (
 	"github.com/Thauan/gotsk"
 	"github.com/Thauan/gotsk/interfaces"
 	"github.com/Thauan/gotsk/middlewares"
-	"github.com/Thauan/gotsk/store"
 )
 
 func main() {
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 
-	queue := gotsk.NewWithStore(4, store.NewMemoryStore())
+	queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
 	queue.Use(middlewares.LoggingMiddleware(logger))
 
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {

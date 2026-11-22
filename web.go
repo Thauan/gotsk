@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Thauan/gotsk/interfaces"
@@ -30,6 +32,7 @@ type tab struct {
 }
 
 type taskView struct {
+	CanRequeue  bool
 	ID          string
 	Name        string
 	Status      string
@@ -179,6 +182,7 @@ func toTaskView(t interfaces.Task) taskView {
 		label = [2]string{t.Status, "bg-gray-100 text-gray-700"}
 	}
 	return taskView{
+		CanRequeue:  t.Status == "failed",
 		ID:          t.ID,
 		Name:        t.Name,
 		Status:      t.Status,
@@ -241,7 +245,8 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 	mux.HandleFunc("/events", q.streamEvents)
 
 	mux.HandleFunc("/tasks/{id}", q.taskDetail)
-	mux.HandleFunc("/tasks/{id}/requeue", q.actionTo("/", func(w http.ResponseWriter, r *http.Request) (string, bool) {
+	mux.HandleFunc("GET /tasks/{id}/log", q.taskLog)
+	mux.HandleFunc("/tasks/{id}/requeue", q.actionBack(backToDashboard, func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		if q.repo == nil {
 			return ErrNoHistory.Error(), true
 		}
@@ -254,7 +259,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 		}
 		return "Task reenfileirada.", false
 	}))
-	mux.HandleFunc("/tasks/{id}/delete", q.actionTo("/", func(w http.ResponseWriter, r *http.Request) (string, bool) {
+	mux.HandleFunc("/tasks/{id}/delete", q.actionBack(backToDashboard, func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		if q.repo == nil {
 			return ErrNoHistory.Error(), true
 		}
@@ -335,6 +340,11 @@ func (q *Queue) action(fn func(w http.ResponseWriter, r *http.Request) (msg stri
 
 // actionTo é action redirecionando para base com a mensagem.
 func (q *Queue) actionTo(base string, fn func(w http.ResponseWriter, r *http.Request) (msg string, isErr bool)) http.HandlerFunc {
+	return q.actionBack(func(*http.Request) string { return base }, fn)
+}
+
+// actionBack é action com destino calculado pela requisição.
+func (q *Queue) actionBack(base func(*http.Request) string, fn func(w http.ResponseWriter, r *http.Request) (msg string, isErr bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "use POST", http.StatusMethodNotAllowed)
@@ -349,9 +359,27 @@ func (q *Queue) actionTo(base string, fn func(w http.ResponseWriter, r *http.Req
 		if isErr {
 			kind = "erro"
 		}
-		target := base + "?" + url.Values{"msg": {msg}, "kind": {kind}}.Encode()
+		target := base(r)
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		target += sep + url.Values{"msg": {msg}, "kind": {kind}}.Encode()
 		http.Redirect(w, r, target, http.StatusSeeOther)
 	}
+}
+
+// backToDashboard volta para o painel com os filtros de onde a ação partiu,
+// quando a origem é o painel. Em outras telas, volta para o painel sem filtros.
+func backToDashboard(r *http.Request) string {
+	if !sameOrigin(r) {
+		return "/"
+	}
+	ref, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || ref.Path != "/" {
+		return "/"
+	}
+	return "/?" + ref.RawQuery
 }
 
 func sameOrigin(r *http.Request) bool {
@@ -515,6 +543,56 @@ func (q *Queue) taskDetail(w http.ResponseWriter, r *http.Request) {
 	if err := tmpl.ExecuteTemplate(w, "task-detail.html", view); err != nil {
 		log.Printf("erro ao renderizar task-detail: %v", err)
 	}
+}
+
+// taskLog devolve um arquivo de texto com os dados da execução, para anexar
+// a um chamado ou comparar execuções.
+func (q *Queue) taskLog(w http.ResponseWriter, r *http.Request) {
+	if q.repo == nil {
+		http.Error(w, ErrNoHistory.Error(), http.StatusNotFound)
+		return
+	}
+	id := r.PathValue("id")
+	t, err := q.repo.Get(r.Context(), id)
+	if errors.Is(err, interfaces.ErrTaskNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		log.Printf("erro ao gerar log: %v", err)
+		http.Error(w, "erro ao consultar o histórico", http.StatusInternalServerError)
+		return
+	}
+
+	v := toTaskDetail(t)
+	var b strings.Builder
+	fmt.Fprintf(&b, "Task:        %s\n", v.ID)
+	fmt.Fprintf(&b, "Nome:        %s\n", v.Name)
+	fmt.Fprintf(&b, "Status:      %s\n", v.Status)
+	fmt.Fprintf(&b, "Prioridade:  %d\n", v.Priority)
+	fmt.Fprintf(&b, "Criada em:   %s\n", v.CreatedAt)
+	fmt.Fprintf(&b, "Agendada:    %s\n", v.ScheduledAt)
+	fmt.Fprintf(&b, "Iniciada em: %s\n", v.StartedAt)
+	fmt.Fprintf(&b, "Finalizada:  %s\n", v.FinishedAt)
+	fmt.Fprintf(&b, "Espera:      %s\n", v.QueueWait)
+	fmt.Fprintf(&b, "Duração:     %s\n", v.Duration)
+	fmt.Fprintf(&b, "Worker:      %s\n", v.Worker)
+	fmt.Fprintf(&b, "\nPayload:\n%s\n", v.Payload)
+	fmt.Fprintf(&b, "\nTentativas (%d):\n", len(v.Attempts))
+	for _, a := range v.Attempts {
+		result := "sucesso"
+		if a.Failed {
+			result = "ERRO: " + a.Error
+		}
+		fmt.Fprintf(&b, "  #%d  início=%s  duração=%s  worker=%s  %s\n", a.Number, a.Started, a.Duration, a.Worker, result)
+	}
+	if v.Error != "" {
+		fmt.Fprintf(&b, "\nÚltimo erro: %s\n", v.Error)
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.log"`, id))
+	io.WriteString(w, b.String())
 }
 
 // ServeUI sobe o painel em addr e para quando ctx é cancelado.

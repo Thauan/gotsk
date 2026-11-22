@@ -1,4 +1,5 @@
-package interfaces
+// Package sqs implementa interfaces.TaskStore sobre Amazon SQS.
+package sqs
 
 import (
 	"context"
@@ -7,25 +8,27 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/Thauan/gotsk/interfaces"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
-type SQSStore struct {
+type Store struct {
 	client   *sqs.Client
 	queueURL string
 	mu       sync.Mutex
 	pending  map[string]string
 }
 
-func NewSQSStore(client *sqs.Client, queueURL string) *SQSStore {
-	return &SQSStore{
+// New cria um store SQS para a fila queueURL.
+func New(client *sqs.Client, queueURL string) *Store {
+	return &Store{
 		client:   client,
 		queueURL: queueURL,
 		pending:  make(map[string]string),
 	}
 }
 
-func (s *SQSStore) Push(task Task) error {
+func (s *Store) Push(task interfaces.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("failed to marshal task: %w", err)
@@ -42,28 +45,28 @@ func (s *SQSStore) Push(task Task) error {
 	return nil
 }
 
-func (s *SQSStore) Pop() (Task, error) {
+func (s *Store) Pop() (interfaces.Task, error) {
 	resp, err := s.client.ReceiveMessage(context.TODO(), &sqs.ReceiveMessageInput{
 		QueueUrl:            &s.queueURL,
 		MaxNumberOfMessages: 1,
 		WaitTimeSeconds:     10,
 	})
 	if err != nil {
-		return Task{}, fmt.Errorf("failed to receive message: %w", err)
+		return interfaces.Task{}, fmt.Errorf("failed to receive message: %w", err)
 	}
 
 	if len(resp.Messages) == 0 {
-		return Task{}, errors.New("no tasks available")
+		return interfaces.Task{}, errors.New("no tasks available")
 	}
 
 	msg := resp.Messages[0]
-	var task Task
+	var task interfaces.Task
 	if err := json.Unmarshal([]byte(*msg.Body), &task); err != nil {
-		return Task{}, fmt.Errorf("failed to unmarshal task: %w", err)
+		return interfaces.Task{}, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	if task.ID == "" {
-		return Task{}, errors.New("task missing ID")
+		return interfaces.Task{}, errors.New("task missing ID")
 	}
 
 	s.mu.Lock()
@@ -73,7 +76,7 @@ func (s *SQSStore) Pop() (Task, error) {
 	return task, nil
 }
 
-func (s *SQSStore) Ack(task Task) error {
+func (s *Store) Ack(task interfaces.Task) error {
 	s.mu.Lock()
 	receipt, ok := s.pending[task.ID]
 	if !ok {

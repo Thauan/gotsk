@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gotsk · Task {{.ID}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    {{template "sidebar-assets"}}
   </head>
-  <body class="min-h-full text-gray-900">
-    <main class="mx-auto max-w-5xl p-6 md:p-8">
-      <h1 class="mb-4 text-2xl font-bold">Gotsk</h1>
-      {{template "nav" "tasks"}}
+  <body class="h-full text-gray-900">
+    <div class="flex min-h-screen">
+      <aside id="sidebar" class="hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+        {{template "sidebar" "tasks"}}
+      </aside>
 
-      <p class="mb-2 text-sm"><a href="/" class="text-gray-500 hover:text-gray-900">← Voltar às tarefas</a></p>
+      <main class="min-w-0 flex-1 p-6 md:p-8">
+
+      <p class="mb-4 text-sm"><a href="/" class="text-gray-500 hover:text-gray-900">← Voltar às tarefas</a></p>
 
       {{if .Flash}}
       <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">{{.Flash}}</div>
@@ -24,7 +28,8 @@
             <h2 class="mt-1 text-xl font-semibold">{{.Name}}</h2>
             <span class="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{.StatusClass}}">{{.StatusLabel}}</span>
           </div>
-          <div class="flex gap-3">
+          <div class="flex flex-wrap gap-3">
+            <a href="/tasks/{{.ID}}/log" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">Baixar log</a>
             {{if .CanRequeue}}
             <form method="post" action="/tasks/{{.ID}}/requeue" onsubmit="return confirm('Reenfileirar esta task?')">
               <button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">Reenfileirar</button>
@@ -95,6 +100,8 @@
         <h2 class="text-lg font-semibold">Payload</h2>
         <pre class="mt-4 overflow-x-auto rounded-md bg-gray-900 p-4 text-xs text-gray-100">{{.Payload}}</pre>
       </section>
-    </main>
+      </main>
+    </div>
+  {{template "sidebar-script"}}
   </body>
 </html>

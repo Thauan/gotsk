@@ -4,20 +4,48 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/fatih/color"
 )
 
+// style aplica cores ANSI quando a saída é um terminal e NO_COLOR não está
+// definido. Substitui fatih/color para não adicionar dependências ao núcleo.
+type style struct{ code string }
+
+var colorEnabled = func() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}()
+
+func (st style) Sprint(a ...any) string {
+	text := fmt.Sprint(a...)
+	if !colorEnabled {
+		return text
+	}
+	return "\x1b[" + st.code + "m" + text + "\x1b[0m"
+}
+
+func (st style) Println(a ...any) {
+	fmt.Println(st.Sprint(fmt.Sprintln(a...)))
+}
+
+func (st style) Printf(format string, a ...any) {
+	fmt.Print(st.Sprint(fmt.Sprintf(format, a...)))
+}
+
 func LoggingMiddleware(logger *log.Logger) interfaces.Middleware {
-	successColor := color.New(color.FgGreen, color.Bold)
-	errorColor := color.New(color.FgRed, color.Bold)
-	warningColor := color.New(color.FgYellow, color.Bold)
-	infoColor := color.New(color.FgCyan, color.Bold)
-	separatorColor := color.New(color.FgMagenta, color.Bold)
+	successColor := style{"32;1"}
+	errorColor := style{"31;1"}
+	warningColor := style{"33;1"}
+	infoColor := style{"36;1"}
+	separatorColor := style{"35;1"}
 
 	return func(next interfaces.HandlerFunc) interfaces.HandlerFunc {
 		return func(ctx context.Context, payload interfaces.Payload) error {
@@ -63,7 +91,7 @@ func LoggingMiddleware(logger *log.Logger) interfaces.Middleware {
 	}
 }
 
-func printBox(c *color.Color, text string, width int) {
+func printBox(c style, text string, width int) {
 	boxTop := "┌" + strings.Repeat("─", width-2) + "┐"
 	boxBottom := "└" + strings.Repeat("─", width-2) + "┘"
 
@@ -77,7 +105,7 @@ func printBox(c *color.Color, text string, width int) {
 	c.Println(boxBottom)
 }
 
-func printSeparator(c *color.Color, width int) {
+func printSeparator(c style, width int) {
 	c.Println("├" + strings.Repeat("─", width-2) + "┤")
 }
 

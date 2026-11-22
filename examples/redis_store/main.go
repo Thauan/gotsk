@@ -7,8 +7,8 @@ import (
 
 	"github.com/Thauan/gotsk"
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/middlewares"
-	"github.com/Thauan/gotsk/store"
+	zapmw "github.com/Thauan/gotsk/middlewares/zap"
+	redisstore "github.com/Thauan/gotsk/store/redis"
 	"go.uber.org/zap"
 )
 
@@ -19,9 +19,9 @@ func main() {
 	}
 	defer logger.Sync()
 
-	store := store.NewRedisStore("localhost:6379", "", 0, "gotsk:queue")
+	store := redisstore.New("localhost:6379", "", 0, "gotsk:queue")
 	queue := gotsk.NewWithStore(4, store)
-	queue.Use(middlewares.ZapLoggingMiddleware(logger))
+	queue.Use(zapmw.LoggingMiddleware(logger))
 
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])

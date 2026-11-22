@@ -6,21 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Thauan/gotsk/history/sqlite"
 	"github.com/Thauan/gotsk/interfaces"
 	"github.com/stretchr/testify/require"
 )
 
-func newUITest(t *testing.T) (http.Handler, *sqlite.Repository, *Queue) {
+func newUITest(t *testing.T) (http.Handler, *memHistory, *Queue) {
 	t.Helper()
-	repo, err := sqlite.Open("file:" + filepath.Join(t.TempDir(), "gotsk.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { repo.Close() })
+	repo := newMemHistory()
 
 	now := time.Now()
 	ctx := context.Background()
@@ -112,7 +108,7 @@ func TestSettingsPageRenders(t *testing.T) {
 	code, body := get(t, h, "/settings")
 	require.Equal(t, http.StatusOK, code)
 	require.Contains(t, body, "Processamento")
-	require.Contains(t, body, "SQLite")
+	require.Contains(t, body, "memória (teste)")
 }
 
 func TestActionsRejectCrossOriginRequests(t *testing.T) {
@@ -237,4 +233,57 @@ func TestRequeueTaskOnlyWorksForFailures(t *testing.T) {
 	h, _, _ := newUITest(t)
 	rec := post(t, h, "/tasks/task-ok/requeue", "", url.Values{})
 	require.Contains(t, rec.Header().Get("Location"), "kind=erro")
+}
+
+func TestRowMenuOffersRequeueOnlyForFailures(t *testing.T) {
+	h, _, _ := newUITest(t)
+	_, body := get(t, h, "/tasks")
+	require.Contains(t, body, "/tasks/task-bad/requeue")
+	require.NotContains(t, body, "/tasks/task-ok/requeue")
+	require.Contains(t, body, "/tasks/task-ok/delete")
+	require.Contains(t, body, "/tasks/task-ok/log")
+	require.Contains(t, body, "Visualizar")
+	require.Contains(t, body, "Baixar log")
+}
+
+func TestTaskLogDownload(t *testing.T) {
+	h, repo, _ := newUITest(t)
+	now := time.Now()
+	require.NoError(t, repo.Save(context.Background(), interfaces.Task{
+		ID: "task-log", Name: "send_email", Status: "failed", Retries: 1, WorkerID: "w9",
+		Payload: interfaces.Payload{"to": "ana@example.com"}, CreatedAt: now, StartedAt: now, FinishedAt: now,
+		Error: "boom",
+		Attempts: []interfaces.Attempt{
+			{Number: 1, StartedAt: now, FinishedAt: now, WorkerID: "w9", Error: "boom"},
+			{Number: 2, StartedAt: now, FinishedAt: now, WorkerID: "w9", Error: "boom"},
+		},
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tasks/task-log/log", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/plain")
+	require.Contains(t, rec.Header().Get("Content-Disposition"), `attachment; filename="task-log.log"`)
+	body := rec.Body.String()
+	require.Contains(t, body, "Tentativas (2)")
+	require.Contains(t, body, "ERRO: boom")
+	require.Contains(t, body, "ana@example.com")
+
+	code, _ := get(t, h, "/tasks/nao-existe/log")
+	require.Equal(t, http.StatusNotFound, code)
+}
+
+func TestRequeueFromDashboardKeepsFilters(t *testing.T) {
+	h, _, _ := newUITest(t)
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/tasks/task-bad/requeue", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://example.com")
+	req.Header.Set("Referer", "http://example.com/?status=failed&period=7d")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	loc := rec.Header().Get("Location")
+	require.True(t, strings.HasPrefix(loc, "/?status=failed&period=7d&"), loc)
+	require.Contains(t, loc, "msg=")
 }

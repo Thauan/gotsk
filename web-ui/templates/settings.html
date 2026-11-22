@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gotsk · Configurações</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    {{template "sidebar-assets"}}
   </head>
-  <body class="min-h-full text-gray-900">
-    <main class="mx-auto max-w-4xl p-6 md:p-8">
-      <h1 class="mb-4 text-2xl font-bold">Gotsk</h1>
-      {{template "nav" "settings"}}
+  <body class="h-full text-gray-900">
+    <div class="flex min-h-screen">
+      <aside id="sidebar" class="hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+        {{template "sidebar" "settings"}}
+      </aside>
+
+      <main class="min-w-0 flex-1 p-6 md:p-8">
 
       {{if .Flash}}
       <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">
@@ -98,6 +102,8 @@
           </dl>
         </section>
       </div>
-    </main>
+      </main>
+    </div>
+  {{template "sidebar-script"}}
   </body>
 </html>

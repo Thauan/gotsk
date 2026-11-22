@@ -44,8 +44,16 @@ jobs:
       with:
         go-version: 1.24
 
-    - name: Build
-      run: go build -v ./...
+    - name: Format
+      run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './web-ui/*'))"
 
-    - name: Test
-      run: go test -v -cover ./...
+    # O repositório tem um go.mod por módulo (núcleo, adaptadores, exemplos).
+    # Cada um é verificado separadamente.
+    - name: Build, vet and test every module
+      run: |
+        set -e
+        for mod in $(find . -name go.mod -not -path './web-ui/*' -exec dirname {} \; | sort); do
+          echo "::group::$mod"
+          (cd "$mod" && go vet ./... && go build ./... && go test -count=1 -cover ./...)
+          echo "::endgroup::"
+        done
