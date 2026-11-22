@@ -53,20 +53,22 @@ func NewWithStore(workers int, store interfaces.TaskStore) *Queue {
 	}
 }
 
+// Register associa um handler ao nome. Os middlewares são aplicados na
+// execução (process), então valem também para middlewares adicionados
+// depois do registro, e são aplicados uma única vez por task.
 func (q *Queue) Register(name string, handler HandlerFunc) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for i := len(q.middlewares) - 1; i >= 0; i-- {
-		handler = HandlerFunc(q.middlewares[i](interfaces.HandlerFunc(handler)))
-	}
 	q.handlers[name] = handler
 }
 
 func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
+	// O lock protege só a leitura do mapa de handlers. A escrita no store e
+	// no histórico acontece sem ele, para não bloquear Register.
 	q.mu.RLock()
-	defer q.mu.RUnlock()
-
-	if _, ok := q.handlers[name]; !ok {
+	_, ok := q.handlers[name]
+	q.mu.RUnlock()
+	if !ok {
 		return fmt.Errorf("handler for task '%s' not registered", name)
 	}
 

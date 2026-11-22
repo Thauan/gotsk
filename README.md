@@ -12,6 +12,8 @@
 - Suporte a múltiplos mecanismos de armazenamento de tarefas (`MemoryStore`, `redis.Store`, `sqs.Store`)
 - Suporte a logs com middleware padrão e integração com [uber-go/zap](https://github.com/uber-go/zap)
 - Retry automático com backoff exponencial
+- Painel em português e inglês, com seletor de idioma (bandeiras na barra lateral). O padrão segue o idioma do navegador.
+- Prioridade por task (`TaskOptions.Priority`), respeitada pelo `MemoryStore`. Redis e SQS não têm prioridade nativa e a ignoram.
 - Interface extensível para armazenamento (permite criar novos adapters)
 
 ---

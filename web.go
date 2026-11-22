@@ -31,7 +31,26 @@ type tab struct {
 	Active bool
 }
 
+// langFlag é uma bandeira do seletor de idioma.
+type langFlag struct {
+	Code   string
+	Label  string
+	Href   string
+	Active bool
+	Icon   template.HTML
+}
+
+// shell são os dados comuns a todas as telas: idioma, tradutor, item ativo
+// da barra lateral e as bandeiras.
+type shell struct {
+	Lang   string
+	T      translator
+	Active string
+	Flags  []langFlag
+}
+
 type taskView struct {
+	T           translator
 	CanRequeue  bool
 	ID          string
 	Name        string
@@ -43,6 +62,7 @@ type taskView struct {
 }
 
 type dashboardView struct {
+	shell
 	Flash      string
 	FlashError bool
 	HasHistory bool
@@ -55,33 +75,65 @@ type dashboardView struct {
 	Tasks      []taskView
 }
 
-var statusLabels = map[string][2]string{
-	"queued":    {"Pendente", "bg-gray-100 text-gray-700"},
-	"scheduled": {"Agendada", "bg-amber-100 text-amber-800"},
-	"running":   {"Processando", "bg-blue-100 text-blue-800"},
-	"completed": {"Concluída", "bg-green-100 text-green-800"},
-	"failed":    {"Falha", "bg-red-100 text-red-800"},
+// statusClasses são as cores do badge de cada status. O rótulo vem do
+// tradutor, na chave status.<nome>.
+var statusClasses = map[string]string{
+	"queued":    "bg-gray-100 text-gray-700",
+	"scheduled": "bg-amber-100 text-amber-800",
+	"running":   "bg-blue-100 text-blue-800",
+	"completed": "bg-green-100 text-green-800",
+	"failed":    "bg-red-100 text-red-800",
 }
 
 var statusTabs = []struct{ value, label string }{
-	{"", "Todas"},
-	{"queued", "Pendentes"},
-	{"running", "Processando"},
-	{"completed", "Concluídas"},
-	{"failed", "Falhas"},
+	{"", "tab.all"},
+	{"queued", "tab.queued"},
+	{"running", "tab.running"},
+	{"completed", "tab.completed"},
+	{"failed", "tab.failed"},
 }
 
 var periods = []struct{ value, label string }{
-	{"24h", "Últimas 24h"},
-	{"7d", "Últimos 7 dias"},
-	{"all", "Todo o período"},
+	{"24h", "period.24h"},
+	{"7d", "period.7d"},
+	{"all", "period.all"},
+}
+
+// Bandeiras simplificadas em SVG, sem dependências externas.
+const flagBR template.HTML = `<svg viewBox="0 0 60 40" class="h-4 w-6 rounded-sm" aria-hidden="true"><rect width="60" height="40" fill="#009c3b"/><path d="M30 4 L56 20 L30 36 L4 20 Z" fill="#ffdf00"/><circle cx="30" cy="20" r="8" fill="#002776"/></svg>`
+
+const flagUS template.HTML = `<svg viewBox="0 0 60 40" class="h-4 w-6 rounded-sm" aria-hidden="true"><rect width="60" height="40" fill="#fff"/><rect y="0" width="60" height="3.1" fill="#b22234"/><rect y="6.15" width="60" height="3.1" fill="#b22234"/><rect y="12.3" width="60" height="3.1" fill="#b22234"/><rect y="18.45" width="60" height="3.1" fill="#b22234"/><rect y="24.6" width="60" height="3.1" fill="#b22234"/><rect y="30.75" width="60" height="3.1" fill="#b22234"/><rect y="36.9" width="60" height="3.1" fill="#b22234"/><rect width="26" height="21.5" fill="#3c3b6e"/></svg>`
+
+// newShell monta os dados comuns da tela para a requisição: idioma escolhido
+// e links para trocar de idioma mantendo a tela atual.
+func newShell(r *http.Request, active string) shell {
+	lang := langFromRequest(r)
+	back := url.QueryEscape(r.URL.RequestURI())
+	return shell{
+		Lang:   lang,
+		T:      newTranslator(lang),
+		Active: active,
+		Flags: []langFlag{
+			{Code: langPT, Label: "Português (Brasil)", Href: "/lang?set=" + langPT + "&back=" + back, Active: lang == langPT, Icon: flagBR},
+			{Code: langEN, Label: "English", Href: "/lang?set=" + langEN + "&back=" + back, Active: lang == langEN, Icon: flagUS},
+		},
+	}
+}
+
+// statusLabel devolve o rótulo traduzido e a cor do status.
+func statusLabel(tr translator, status string) (string, string) {
+	cls, ok := statusClasses[status]
+	if !ok {
+		return status, "bg-gray-100 text-gray-700"
+	}
+	return tr("status." + status), cls
 }
 
 // uiFilters lê e valida os parâmetros da URL. Valores desconhecidos viram o padrão.
 func uiFilters(r *http.Request) (status, search, period string) {
 	q := r.URL.Query()
 	status = q.Get("status")
-	if _, ok := statusLabels[status]; !ok {
+	if _, ok := statusClasses[status]; !ok {
 		status = ""
 	}
 	period = q.Get("period")
@@ -128,7 +180,9 @@ func (q *Queue) uiTemplates() (*template.Template, error) {
 
 func (q *Queue) buildView(r *http.Request) (dashboardView, error) {
 	status, search, period := uiFilters(r)
+	sh := newShell(r, "tasks")
 	view := dashboardView{
+		shell:      sh,
 		Flash:      r.URL.Query().Get("msg"),
 		FlashError: r.URL.Query().Get("kind") == "erro",
 		HasHistory: q.repo != nil,
@@ -139,14 +193,14 @@ func (q *Queue) buildView(r *http.Request) (dashboardView, error) {
 
 	for _, t := range statusTabs {
 		view.Tabs = append(view.Tabs, tab{
-			Label:  t.label,
+			Label:  sh.T(t.label),
 			Href:   href(t.value, search, period),
 			Active: t.value == status,
 		})
 	}
 	for _, p := range periods {
 		view.Periods = append(view.Periods, tab{
-			Label:  p.label,
+			Label:  sh.T(p.label),
 			Href:   href(status, search, p.value),
 			Active: p.value == period,
 		})
@@ -171,25 +225,23 @@ func (q *Queue) buildView(r *http.Request) (dashboardView, error) {
 		return view, fmt.Errorf("listando tasks: %w", err)
 	}
 	for _, t := range tasks {
-		view.Tasks = append(view.Tasks, toTaskView(t))
+		view.Tasks = append(view.Tasks, toTaskView(t, sh.T))
 	}
 	return view, nil
 }
 
-func toTaskView(t interfaces.Task) taskView {
-	label := statusLabels[t.Status]
-	if label[0] == "" {
-		label = [2]string{t.Status, "bg-gray-100 text-gray-700"}
-	}
+func toTaskView(t interfaces.Task, tr translator) taskView {
+	label, class := statusLabel(tr, t.Status)
 	return taskView{
+		T:           tr,
 		CanRequeue:  t.Status == "failed",
 		ID:          t.ID,
 		Name:        t.Name,
 		Status:      t.Status,
-		StatusLabel: label[0],
-		StatusClass: label[1],
+		StatusLabel: label,
+		StatusClass: class,
 		Retries:     t.Retries,
-		CreatedAt:   t.CreatedAt.Format("02/01 15:04:05"),
+		CreatedAt:   t.CreatedAt.Format(tr("time.short")),
 	}
 }
 
@@ -230,7 +282,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 			fail(w, err)
 			return
 		}
-		render(w, "stats", view.Counts)
+		render(w, "stats", view)
 	})
 
 	mux.HandleFunc("/tasks", func(w http.ResponseWriter, r *http.Request) {
@@ -244,29 +296,52 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 
 	mux.HandleFunc("/events", q.streamEvents)
 
+	// /lang grava a escolha de idioma num cookie e volta para a tela de origem.
+	mux.HandleFunc("/lang", func(w http.ResponseWriter, r *http.Request) {
+		set := r.URL.Query().Get("set")
+		if !supportedLang(set) {
+			http.Error(w, "idioma não suportado", http.StatusBadRequest)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     langCookie,
+			Value:    set,
+			Path:     "/",
+			MaxAge:   365 * 24 * 60 * 60,
+			SameSite: http.SameSiteLaxMode,
+		})
+		back := r.URL.Query().Get("back")
+		if !strings.HasPrefix(back, "/") || strings.HasPrefix(back, "//") {
+			back = "/"
+		}
+		http.Redirect(w, r, back, http.StatusSeeOther)
+	})
+
 	mux.HandleFunc("/tasks/{id}", q.taskDetail)
 	mux.HandleFunc("GET /tasks/{id}/log", q.taskLog)
 	mux.HandleFunc("/tasks/{id}/requeue", q.actionBack(backToDashboard, func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		tr := newTranslator(langFromRequest(r))
 		if q.repo == nil {
-			return ErrNoHistory.Error(), true
+			return tr("err.noHistory"), true
 		}
 		id := r.PathValue("id")
 		if err := q.RequeueTask(r.Context(), id); err != nil {
 			if errors.Is(err, interfaces.ErrTaskNotFound) {
-				return "Task não encontrada.", true
+				return tr("msg.taskNotFound"), true
 			}
-			return err.Error(), true
+			return tr("msg.error", err), true
 		}
-		return "Task reenfileirada.", false
+		return tr("msg.taskRequeued"), false
 	}))
 	mux.HandleFunc("/tasks/{id}/delete", q.actionBack(backToDashboard, func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		tr := newTranslator(langFromRequest(r))
 		if q.repo == nil {
-			return ErrNoHistory.Error(), true
+			return tr("err.noHistory"), true
 		}
 		if err := q.repo.Delete(r.Context(), r.PathValue("id")); err != nil {
-			return "Erro ao excluir a task.", true
+			return tr("msg.taskDeleteError"), true
 		}
-		return "Task removida do histórico.", false
+		return tr("msg.taskRemoved"), false
 	}))
 
 	mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -279,50 +354,52 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 	})
 	mux.HandleFunc("/settings/pause", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		q.Pause()
-		return "Processamento pausado. As tasks em execução vão terminar; as pendentes ficam esperando.", false
+		return newTranslator(langFromRequest(r))("msg.paused"), false
 	}))
 	mux.HandleFunc("/settings/resume", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		q.Resume()
-		return "Processamento retomado.", false
+		return newTranslator(langFromRequest(r))("msg.resumed"), false
 	}))
 	mux.HandleFunc("/settings/history/purge", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		tr := newTranslator(langFromRequest(r))
 		if q.repo == nil {
-			return ErrNoHistory.Error(), true
+			return tr("err.noHistory"), true
 		}
 		if r.FormValue("confirm") != "yes" {
-			return "Limpeza cancelada: confirmação ausente.", true
+			return tr("msg.purgeCancelled"), true
 		}
 		var filter interfaces.HistoryFilter
-		var label string
+		var scope string
 		switch r.FormValue("scope") {
 		case "completed":
-			filter.Status, label = "completed", "concluídas"
+			filter.Status, scope = "completed", tr("scope.completed")
 		case "failed":
-			filter.Status, label = "failed", "falhas"
+			filter.Status, scope = "failed", tr("scope.failed")
 		case "all":
-			label = "todas"
+			scope = tr("scope.all")
 		default:
-			return "Escopo de limpeza inválido.", true
+			return tr("msg.purgeScope"), true
 		}
 		n, err := q.repo.Purge(r.Context(), filter)
 		if err != nil {
 			log.Printf("erro ao limpar histórico: %v", err)
-			return "Erro ao limpar o histórico. Veja o log do servidor.", true
+			return tr("msg.purgeError"), true
 		}
-		return fmt.Sprintf("%d tasks %s removidas do histórico.", n, label), false
+		return tr("msg.purgeDone", n, scope), false
 	}))
 	mux.HandleFunc("/settings/failed/requeue", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		tr := newTranslator(langFromRequest(r))
 		requeued, skipped, err := q.RequeueFailed(r.Context())
 		if err != nil {
 			if errors.Is(err, ErrNoHistory) {
-				return err.Error(), true
+				return tr("err.noHistory"), true
 			}
 			log.Printf("erro ao reenfileirar falhas: %v", err)
-			return "Erro ao reenfileirar as falhas. Veja o log do servidor.", true
+			return tr("msg.requeueError"), true
 		}
-		msg := fmt.Sprintf("%d falhas reenfileiradas.", requeued)
+		msg := tr("msg.requeued", requeued)
 		if skipped > 0 {
-			msg += fmt.Sprintf(" %d puladas: handler não registrado.", skipped)
+			msg += tr("msg.requeuedSkipped", skipped)
 		}
 		return msg, skipped > 0
 	}))
@@ -351,7 +428,7 @@ func (q *Queue) actionBack(base func(*http.Request) string, fn func(w http.Respo
 			return
 		}
 		if !sameOrigin(r) {
-			http.Error(w, "origem não permitida", http.StatusForbidden)
+			http.Error(w, newTranslator(langFromRequest(r))("msg.origin"), http.StatusForbidden)
 			return
 		}
 		msg, isErr := fn(w, r)
@@ -395,6 +472,7 @@ func sameOrigin(r *http.Request) bool {
 }
 
 type settingsView struct {
+	shell
 	Flash      string
 	FlashError bool
 	Paused     bool
@@ -407,6 +485,7 @@ type settingsView struct {
 
 func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
 	view := settingsView{
+		shell:      newShell(r, "settings"),
 		Flash:      r.URL.Query().Get("msg"),
 		FlashError: r.URL.Query().Get("kind") == "erro",
 		Paused:     q.Paused(),
@@ -438,6 +517,7 @@ type attemptView struct {
 }
 
 type taskDetailView struct {
+	shell
 	Flash       string
 	FlashError  bool
 	ID          string
@@ -460,11 +540,11 @@ type taskDetailView struct {
 	CanRequeue  bool
 }
 
-func fmtTime(t time.Time) string {
+func fmtTime(t time.Time, layout string) string {
 	if t.IsZero() {
 		return "—"
 	}
-	return t.Format("02/01/2006 15:04:05.000")
+	return t.Format(layout)
 }
 
 func fmtSpan(from, to time.Time) string {
@@ -474,28 +554,26 @@ func fmtSpan(from, to time.Time) string {
 	return to.Sub(from).Round(time.Millisecond).String()
 }
 
-func toTaskDetail(t interfaces.Task) taskDetailView {
-	label := statusLabels[t.Status]
-	if label[0] == "" {
-		label = [2]string{t.Status, "bg-gray-100 text-gray-700"}
-	}
+func toTaskDetail(t interfaces.Task, tr translator) taskDetailView {
+	label, class := statusLabel(tr, t.Status)
 	payload, err := json.MarshalIndent(t.Payload, "", "  ")
 	if err != nil {
 		payload = []byte(fmt.Sprint(t.Payload))
 	}
+	layout := tr("time.long")
 	view := taskDetailView{
 		ID:          t.ID,
 		Name:        t.Name,
 		Status:      t.Status,
-		StatusLabel: label[0],
-		StatusClass: label[1],
+		StatusLabel: label,
+		StatusClass: class,
 		Priority:    t.Priority,
 		Retries:     t.Retries,
 		Worker:      t.WorkerID,
-		CreatedAt:   fmtTime(t.CreatedAt),
-		ScheduledAt: fmtTime(t.ScheduledAt),
-		StartedAt:   fmtTime(t.StartedAt),
-		FinishedAt:  fmtTime(t.FinishedAt),
+		CreatedAt:   fmtTime(t.CreatedAt, layout),
+		ScheduledAt: fmtTime(t.ScheduledAt, layout),
+		StartedAt:   fmtTime(t.StartedAt, layout),
+		FinishedAt:  fmtTime(t.FinishedAt, layout),
 		QueueWait:   fmtSpan(t.CreatedAt, t.StartedAt),
 		Duration:    fmtSpan(t.StartedAt, t.FinishedAt),
 		Error:       t.Error,
@@ -505,7 +583,7 @@ func toTaskDetail(t interfaces.Task) taskDetailView {
 	for _, a := range t.Attempts {
 		view.Attempts = append(view.Attempts, attemptView{
 			Number:   a.Number,
-			Started:  fmtTime(a.StartedAt),
+			Started:  fmtTime(a.StartedAt, layout),
 			Duration: fmtSpan(a.StartedAt, a.FinishedAt),
 			Worker:   a.WorkerID,
 			Error:    a.Error,
@@ -531,7 +609,9 @@ func (q *Queue) taskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view := toTaskDetail(t)
+	sh := newShell(r, "tasks")
+	view := toTaskDetail(t, sh.T)
+	view.shell = sh
 	view.Flash = r.URL.Query().Get("msg")
 	view.FlashError = r.URL.Query().Get("kind") == "erro"
 
@@ -548,8 +628,9 @@ func (q *Queue) taskDetail(w http.ResponseWriter, r *http.Request) {
 // taskLog devolve um arquivo de texto com os dados da execução, para anexar
 // a um chamado ou comparar execuções.
 func (q *Queue) taskLog(w http.ResponseWriter, r *http.Request) {
+	tr := newTranslator(langFromRequest(r))
 	if q.repo == nil {
-		http.Error(w, ErrNoHistory.Error(), http.StatusNotFound)
+		http.Error(w, tr("err.noHistory"), http.StatusNotFound)
 		return
 	}
 	id := r.PathValue("id")
@@ -564,30 +645,31 @@ func (q *Queue) taskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := toTaskDetail(t)
+	v := toTaskDetail(t, tr)
 	var b strings.Builder
-	fmt.Fprintf(&b, "Task:        %s\n", v.ID)
-	fmt.Fprintf(&b, "Nome:        %s\n", v.Name)
-	fmt.Fprintf(&b, "Status:      %s\n", v.Status)
-	fmt.Fprintf(&b, "Prioridade:  %d\n", v.Priority)
-	fmt.Fprintf(&b, "Criada em:   %s\n", v.CreatedAt)
-	fmt.Fprintf(&b, "Agendada:    %s\n", v.ScheduledAt)
-	fmt.Fprintf(&b, "Iniciada em: %s\n", v.StartedAt)
-	fmt.Fprintf(&b, "Finalizada:  %s\n", v.FinishedAt)
-	fmt.Fprintf(&b, "Espera:      %s\n", v.QueueWait)
-	fmt.Fprintf(&b, "Duração:     %s\n", v.Duration)
-	fmt.Fprintf(&b, "Worker:      %s\n", v.Worker)
-	fmt.Fprintf(&b, "\nPayload:\n%s\n", v.Payload)
-	fmt.Fprintf(&b, "\nTentativas (%d):\n", len(v.Attempts))
+	line := func(key, value string) { fmt.Fprintf(&b, "%-15s %s\n", tr(key)+":", value) }
+	line("log.task", v.ID)
+	line("log.name", v.Name)
+	line("log.status", v.Status)
+	line("log.priority", fmt.Sprint(v.Priority))
+	line("log.created", v.CreatedAt)
+	line("log.scheduled", v.ScheduledAt)
+	line("log.started", v.StartedAt)
+	line("log.finished", v.FinishedAt)
+	line("log.wait", v.QueueWait)
+	line("log.duration", v.Duration)
+	line("log.worker", v.Worker)
+	fmt.Fprintf(&b, "\n%s:\n%s\n", tr("log.payload"), v.Payload)
+	fmt.Fprintf(&b, "\n%s\n", tr("log.attempts", len(v.Attempts)))
 	for _, a := range v.Attempts {
-		result := "sucesso"
+		result := tr("log.ok")
 		if a.Failed {
-			result = "ERRO: " + a.Error
+			result = tr("log.error", a.Error)
 		}
-		fmt.Fprintf(&b, "  #%d  início=%s  duração=%s  worker=%s  %s\n", a.Number, a.Started, a.Duration, a.Worker, result)
+		fmt.Fprintf(&b, "%s\n", tr("log.attemptLine", a.Number, a.Started, a.Duration, a.Worker, result))
 	}
 	if v.Error != "" {
-		fmt.Fprintf(&b, "\nÚltimo erro: %s\n", v.Error)
+		fmt.Fprintf(&b, "\n%s\n", tr("log.lastError", v.Error))
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

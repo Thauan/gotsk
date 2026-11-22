@@ -11,6 +11,8 @@
 - Support for multiple task storage backends (`MemoryStore`, `RedisStore`, `SQSStore`)
 - Logging support with standard middleware and integration with [uber-go/zap](https://github.com/uber-go/zap)
 - Automatic retry with exponential backoff
+- Dashboard in Portuguese and English, with a language selector (flags in the sidebar). The default follows the browser language.
+- Per-task priority (`TaskOptions.Priority`), honored by the `MemoryStore`. Redis and SQS have no native priority and ignore it.
 - Extensible interface for storage (allows creation of custom adapters)
 
 ---

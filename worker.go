@@ -20,12 +20,12 @@ func (q *Queue) worker() {
 			return
 		default:
 			if q.paused.Load() {
-				time.Sleep(200 * time.Millisecond)
+				sleepCtx(q.ctx, 200*time.Millisecond)
 				continue
 			}
 			task, err := q.store.Pop()
 			if err != nil {
-				time.Sleep(500 * time.Millisecond)
+				sleepCtx(q.ctx, 500*time.Millisecond)
 				continue
 			}
 
@@ -33,7 +33,7 @@ func (q *Queue) worker() {
 				_ = q.store.Push(task)
 
 				sleepFor := min(time.Until(task.ScheduledAt), time.Second)
-				time.Sleep(sleepFor)
+				sleepCtx(q.ctx, sleepFor)
 				continue
 			}
 
@@ -92,7 +92,16 @@ func (q *Queue) process(task interfaces.Task, workerID string) {
 			task.Retries = attempt + 1
 			q.publish(task)
 		}
-		time.Sleep(simpleBackoff(attempt))
+		if !sleepCtx(q.ctx, simpleBackoff(attempt)) {
+			// Encerramento durante a retentativa: a task não é confirmada,
+			// então um store durável (SQS, Redis) a entrega de novo depois.
+			task.Status = "failed"
+			task.FinishedAt = time.Now()
+			task.Error = "fila encerrada durante retentativa"
+			q.publish(task)
+			log.Printf("🛑 Worker %s: task %s interrompida pelo encerramento", workerID, task.ID)
+			return
+		}
 	}
 
 	task.Status = "failed"

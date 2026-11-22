@@ -1,107 +1,107 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="h-full bg-gray-50">
+<html lang="{{.Lang}}" class="h-full bg-gray-50">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gotsk · Task {{.ID}}</title>
+    <title>{{call .T "brand"}} · {{.ID}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     {{template "sidebar-assets"}}
   </head>
   <body class="h-full text-gray-900">
     <div class="flex min-h-screen">
       <aside id="sidebar" class="hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
-        {{template "sidebar" "tasks"}}
+        {{template "sidebar" .}}
       </aside>
 
       <main class="min-w-0 flex-1 p-6 md:p-8">
+        <div class="mb-4 flex justify-end">{{template "lang-flags" .}}</div>
+        <p class="mb-4 text-sm"><a href="/" class="text-gray-500 hover:text-gray-900">{{call .T "detail.back"}}</a></p>
 
-      <p class="mb-4 text-sm"><a href="/" class="text-gray-500 hover:text-gray-900">← Voltar às tarefas</a></p>
-
-      {{if .Flash}}
-      <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">{{.Flash}}</div>
-      {{end}}
-
-      <section class="rounded-lg border border-gray-200 bg-white p-6">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p class="font-mono text-xs text-gray-500">{{.ID}}</p>
-            <h2 class="mt-1 text-xl font-semibold">{{.Name}}</h2>
-            <span class="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{.StatusClass}}">{{.StatusLabel}}</span>
-          </div>
-          <div class="flex flex-wrap gap-3">
-            <a href="/tasks/{{.ID}}/log" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">Baixar log</a>
-            {{if .CanRequeue}}
-            <form method="post" action="/tasks/{{.ID}}/requeue" onsubmit="return confirm('Reenfileirar esta task?')">
-              <button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">Reenfileirar</button>
-            </form>
-            {{end}}
-            <form method="post" action="/tasks/{{.ID}}/delete" onsubmit="return confirm('Remover esta task do histórico?')">
-              <button class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Remover do histórico</button>
-            </form>
-          </div>
-        </div>
-
-        <dl class="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          <div><dt class="text-gray-500">Criada em</dt><dd class="font-medium tabular-nums">{{.CreatedAt}}</dd></div>
-          <div><dt class="text-gray-500">Agendada para</dt><dd class="font-medium tabular-nums">{{.ScheduledAt}}</dd></div>
-          <div><dt class="text-gray-500">Prioridade</dt><dd class="font-medium">{{.Priority}}</dd></div>
-          <div><dt class="text-gray-500">Iniciada em</dt><dd class="font-medium tabular-nums">{{.StartedAt}}</dd></div>
-          <div><dt class="text-gray-500">Finalizada em</dt><dd class="font-medium tabular-nums">{{.FinishedAt}}</dd></div>
-          <div><dt class="text-gray-500">Espera na fila</dt><dd class="font-medium tabular-nums">{{.QueueWait}}</dd></div>
-          <div><dt class="text-gray-500">Duração total</dt><dd class="font-medium tabular-nums">{{.Duration}}</dd></div>
-          <div><dt class="text-gray-500">Tentativas</dt><dd class="font-medium">{{len .Attempts}}</dd></div>
-          <div><dt class="text-gray-500">Último worker</dt><dd class="font-mono text-xs">{{if .Worker}}{{.Worker}}{{else}}—{{end}}</dd></div>
-        </dl>
-
-        {{if .Error}}
-        <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4">
-          <p class="text-xs font-semibold uppercase tracking-wide text-red-700">Último erro</p>
-          <p class="mt-1 font-mono text-sm text-red-900 break-words">{{.Error}}</p>
-        </div>
+        {{if .Flash}}
+        <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">{{.Flash}}</div>
         {{end}}
-      </section>
 
-      <section class="mt-6 rounded-lg border border-gray-200 bg-white p-6">
-        <h2 class="text-lg font-semibold">Tentativas</h2>
-        {{if .Attempts}}
-        <div class="mt-4 overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead class="border-b border-gray-200 text-gray-500">
-              <tr>
-                <th class="py-2 pr-4 font-medium">#</th>
-                <th class="py-2 pr-4 font-medium">Início</th>
-                <th class="py-2 pr-4 font-medium">Duração</th>
-                <th class="py-2 pr-4 font-medium">Worker</th>
-                <th class="py-2 font-medium">Resultado</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              {{range .Attempts}}
-              <tr>
-                <td class="py-2 pr-4 tabular-nums">{{.Number}}</td>
-                <td class="py-2 pr-4 tabular-nums">{{.Started}}</td>
-                <td class="py-2 pr-4 tabular-nums">{{.Duration}}</td>
-                <td class="py-2 pr-4 font-mono text-xs">{{.Worker}}</td>
-                <td class="py-2">
-                  {{if .Failed}}<span class="font-mono text-xs text-red-700 break-words">{{.Error}}</span>
-                  {{else}}<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">sucesso</span>{{end}}
-                </td>
-              </tr>
+        <section class="rounded-lg border border-gray-200 bg-white p-6">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p class="font-mono text-xs text-gray-500">{{.ID}}</p>
+              <h2 class="mt-1 text-xl font-semibold">{{.Name}}</h2>
+              <span class="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{.StatusClass}}">{{.StatusLabel}}</span>
+            </div>
+            <div class="flex flex-wrap gap-3">
+              <a href="/tasks/{{.ID}}/log" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">{{call .T "row.log"}}</a>
+              {{if .CanRequeue}}
+              <form method="post" action="/tasks/{{.ID}}/requeue" onsubmit="return confirm('{{call .T "confirm.requeueTask"}}')">
+                <button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">{{call .T "detail.requeue"}}</button>
+              </form>
               {{end}}
-            </tbody>
-          </table>
-        </div>
-        {{else}}
-        <p class="mt-2 text-sm text-gray-500">Esta task ainda não foi executada.</p>
-        {{end}}
-      </section>
+              <form method="post" action="/tasks/{{.ID}}/delete" onsubmit="return confirm('{{call .T "confirm.deleteTask"}}')">
+                <button class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">{{call .T "detail.delete"}}</button>
+              </form>
+            </div>
+          </div>
 
-      <section class="mt-6 rounded-lg border border-gray-200 bg-white p-6">
-        <h2 class="text-lg font-semibold">Payload</h2>
-        <pre class="mt-4 overflow-x-auto rounded-md bg-gray-900 p-4 text-xs text-gray-100">{{.Payload}}</pre>
-      </section>
+          <dl class="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div><dt class="text-gray-500">{{call .T "detail.createdAt"}}</dt><dd class="font-medium tabular-nums">{{.CreatedAt}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.scheduledFor"}}</dt><dd class="font-medium tabular-nums">{{.ScheduledAt}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.priority"}}</dt><dd class="font-medium">{{.Priority}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.startedAt"}}</dt><dd class="font-medium tabular-nums">{{.StartedAt}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.finishedAt"}}</dt><dd class="font-medium tabular-nums">{{.FinishedAt}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.queueWait"}}</dt><dd class="font-medium tabular-nums">{{.QueueWait}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.totalDuration"}}</dt><dd class="font-medium tabular-nums">{{.Duration}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.attempts"}}</dt><dd class="font-medium">{{len .Attempts}}</dd></div>
+            <div><dt class="text-gray-500">{{call .T "detail.lastWorker"}}</dt><dd class="font-mono text-xs">{{if .Worker}}{{.Worker}}{{else}}—{{end}}</dd></div>
+          </dl>
+
+          {{if .Error}}
+          <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-red-700">{{call .T "detail.lastError"}}</p>
+            <p class="mt-1 font-mono text-sm text-red-900 break-words">{{.Error}}</p>
+          </div>
+          {{end}}
+        </section>
+
+        <section class="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+          <h2 class="text-lg font-semibold">{{call .T "detail.attemptsTitle"}}</h2>
+          {{if .Attempts}}
+          <div class="mt-4 overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="border-b border-gray-200 text-gray-500">
+                <tr>
+                  <th class="py-2 pr-4 font-medium">{{call .T "detail.number"}}</th>
+                  <th class="py-2 pr-4 font-medium">{{call .T "detail.start"}}</th>
+                  <th class="py-2 pr-4 font-medium">{{call .T "detail.duration"}}</th>
+                  <th class="py-2 pr-4 font-medium">{{call .T "detail.worker"}}</th>
+                  <th class="py-2 font-medium">{{call .T "detail.result"}}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                {{range .Attempts}}
+                <tr>
+                  <td class="py-2 pr-4 tabular-nums">{{.Number}}</td>
+                  <td class="py-2 pr-4 tabular-nums">{{.Started}}</td>
+                  <td class="py-2 pr-4 tabular-nums">{{.Duration}}</td>
+                  <td class="py-2 pr-4 font-mono text-xs">{{.Worker}}</td>
+                  <td class="py-2">
+                    {{if .Failed}}<span class="font-mono text-xs text-red-700 break-words">{{.Error}}</span>
+                    {{else}}<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">{{call $.T "detail.success"}}</span>{{end}}
+                  </td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}
+          <p class="mt-2 text-sm text-gray-500">{{call .T "detail.noAttempts"}}</p>
+          {{end}}
+        </section>
+
+        <section class="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+          <h2 class="text-lg font-semibold">{{call .T "detail.payload"}}</h2>
+          <pre class="mt-4 overflow-x-auto rounded-md bg-gray-900 p-4 text-xs text-gray-100">{{.Payload}}</pre>
+        </section>
       </main>
     </div>
-  {{template "sidebar-script"}}
+    {{template "sidebar-script"}}
   </body>
 </html>

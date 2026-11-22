@@ -1,36 +1,38 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="h-full bg-gray-50">
+<html lang="{{.Lang}}" class="h-full bg-gray-50">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gotsk · Tarefas</title>
+    <title>{{call .T "brand"}} · {{call .T "nav.tasks"}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     {{template "sidebar-assets"}}
   </head>
   <body class="h-full text-gray-900">
     <div class="flex min-h-screen">
       <aside id="sidebar" class="hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
-        {{template "sidebar" "tasks"}}
+        {{template "sidebar" .}}
 
-        <button id="refresh" title="Atualizar dados"
+        <button id="refresh" title="{{call .T "tasks.refresh"}}"
                 class="nav-action mt-auto flex items-center justify-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100">
-          <i aria-hidden="true" class="fa-solid fa-rotate"></i><span class="label">Atualizar dados</span>
+          <i aria-hidden="true" class="fa-solid fa-rotate"></i><span class="label">{{call .T "tasks.refresh"}}</span>
         </button>
-        <p id="live" class="label mt-2 text-center text-xs text-gray-500">conectando ao vivo…</p>
+        <p id="live" class="label mt-2 text-center text-xs text-gray-500"
+           data-connecting="{{call .T "live.connecting"}}" data-on="{{call .T "live.on"}}" data-reconnecting="{{call .T "live.reconnecting"}}">{{call .T "live.connecting"}}</p>
       </aside>
 
-      <main id="main" class="min-w-0 flex-1 p-6 md:p-8 transition-opacity">
+      <main id="main" class="min-w-0 flex-1 p-6 transition-opacity md:p-8">
+        <div class="mb-4 flex justify-end">{{template "lang-flags" .}}</div>
         {{if .Flash}}
         <div class="mb-6 rounded-md border p-4 text-sm {{if .FlashError}}border-red-300 bg-red-50 text-red-900{{else}}border-green-300 bg-green-50 text-green-900{{end}}">{{.Flash}}</div>
         {{end}}
         {{if not .HasHistory}}
         <div class="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          Histórico não configurado. Os cards e a tabela ficam vazios até que um repositório seja definido com <code>SetHistory</code>.
+          {{call .T "history.disabled"}} <code>SetHistory</code>.
         </div>
         {{end}}
 
         <section id="stats" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {{template "stats" .Counts}}
+          {{template "stats" .}}
         </section>
 
         <div class="mt-8 flex flex-wrap items-center justify-between gap-4">
@@ -48,7 +50,7 @@
                 {{range .Periods}}{{if .Active}}<span>{{.Label}}</span>{{end}}{{end}}
               </summary>
               <div class="absolute right-0 z-20 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
-                <p class="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Período</p>
+                <p class="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{{call .T "period.label"}}</p>
                 {{range .Periods}}
                 <a href="{{.Href}}" data-spa class="flex items-center justify-between px-4 py-2 hover:bg-gray-100 {{if .Active}}font-medium text-gray-900{{else}}text-gray-600{{end}}">
                   {{.Label}}
@@ -61,7 +63,7 @@
             <form method="get" action="/" id="search-form">
               {{if .Status}}<input type="hidden" name="status" value="{{.Status}}" />{{end}}
               {{if ne .Period "all"}}<input type="hidden" name="period" value="{{.Period}}" />{{end}}
-              <input type="search" name="q" id="search" value="{{.Search}}" placeholder="Buscar tarefas…"
+              <input type="search" name="q" id="search" value="{{.Search}}" placeholder="{{call .T "search.placeholder"}}"
                      class="w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
             </form>
           </div>
@@ -71,11 +73,11 @@
           <table class="w-full text-left text-sm">
             <thead class="border-b border-gray-200 text-gray-500">
               <tr>
-                <th class="px-4 py-3 font-medium">Status</th>
-                <th class="px-4 py-3 font-medium">ID / Nome</th>
-                <th class="px-4 py-3 font-medium">Tentativas</th>
-                <th class="px-4 py-3 font-medium">Criada em</th>
-                <th class="px-4 py-3 text-right font-medium">Ações</th>
+                <th class="px-4 py-3 font-medium">{{call .T "col.status"}}</th>
+                <th class="px-4 py-3 font-medium">{{call .T "col.idname"}}</th>
+                <th class="px-4 py-3 font-medium">{{call .T "col.attempts"}}</th>
+                <th class="px-4 py-3 font-medium">{{call .T "col.created"}}</th>
+                <th class="px-4 py-3 text-right font-medium">{{call .T "col.actions"}}</th>
               </tr>
             </thead>
             <tbody id="task-table" class="divide-y divide-gray-100">
@@ -143,7 +145,8 @@
           }
         };
 
-        // Links marcados com data-spa (abas e período) usam navegação parcial.
+        // Links marcados com data-spa (abas, período e idioma não entram aqui)
+        // usam navegação parcial.
         document.addEventListener("click", (e) => {
           const link = e.target.closest("a[data-spa]");
           if (link && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
@@ -192,11 +195,11 @@
           const source = new EventSource("/events");
           source.onopen = () => {
             delay = 1000;
-            liveEl().textContent = "ao vivo";
+            liveEl().textContent = liveEl().dataset.on;
           };
           source.addEventListener("task", refresh);
           source.onerror = () => {
-            liveEl().textContent = "reconectando…";
+            liveEl().textContent = liveEl().dataset.reconnecting;
             source.close();
             setTimeout(connect, delay);
             delay = Math.min(delay * 2, 10000);
@@ -205,6 +208,6 @@
         connect();
       })();
     </script>
-  {{template "sidebar-script"}}
+    {{template "sidebar-script"}}
   </body>
 </html>

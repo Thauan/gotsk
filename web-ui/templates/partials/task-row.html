@@ -11,17 +11,17 @@
   <td class="px-4 py-3 tabular-nums text-gray-500">{{.CreatedAt}}</td>
   <td class="px-4 py-3 text-right">
     <details class="menu relative inline-block text-left">
-      <summary class="list-none cursor-pointer select-none rounded-md px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900" aria-label="Ações da task"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
+      <summary class="list-none cursor-pointer select-none rounded-md px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900" aria-label="{{call .T "row.actions"}}"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
       <div class="absolute right-0 z-20 mt-1 w-48 rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
-        <a href="/tasks/{{.ID}}" class="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"><i class="fa-solid fa-eye w-4 text-center text-gray-500"></i>Visualizar</a>
-        <a href="/tasks/{{.ID}}/log" class="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"><i class="fa-solid fa-download w-4 text-center text-gray-500"></i>Baixar log</a>
+        <a href="/tasks/{{.ID}}" class="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"><i class="fa-solid fa-eye w-4 text-center text-gray-500"></i>{{call .T "row.view"}}</a>
+        <a href="/tasks/{{.ID}}/log" class="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"><i class="fa-solid fa-download w-4 text-center text-gray-500"></i>{{call .T "row.log"}}</a>
         {{if .CanRequeue}}
-        <form method="post" action="/tasks/{{.ID}}/requeue" onsubmit="return confirm('Reenfileirar esta task?')">
-          <button class="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-gray-100"><i class="fa-solid fa-rotate-left w-4 text-center text-gray-500"></i>Reenfileirar</button>
+        <form method="post" action="/tasks/{{.ID}}/requeue" onsubmit="return confirm('{{call .T "confirm.requeueTask"}}')">
+          <button class="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-gray-100"><i class="fa-solid fa-rotate-left w-4 text-center text-gray-500"></i>{{call .T "row.requeue"}}</button>
         </form>
         {{end}}
-        <form method="post" action="/tasks/{{.ID}}/delete" onsubmit="return confirm('Apagar esta task do histórico?')">
-          <button class="flex w-full items-center gap-2 px-4 py-2 text-left text-red-700 hover:bg-red-50"><i class="fa-solid fa-trash-can w-4 text-center"></i>Apagar</button>
+        <form method="post" action="/tasks/{{.ID}}/delete" onsubmit="return confirm('{{call .T "confirm.deleteTask"}}')">
+          <button class="flex w-full items-center gap-2 px-4 py-2 text-left text-red-700 hover:bg-red-50"><i class="fa-solid fa-trash-can w-4 text-center"></i>{{call .T "row.delete"}}</button>
         </form>
       </div>
     </details>

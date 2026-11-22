@@ -40,23 +40,30 @@ func (s *MemoryStore) Push(task interfaces.Task) error {
 	return nil
 }
 
+// Pop devolve a task pronta de maior prioridade. Entre prioridades iguais,
+// vale a ordem de chegada.
 func (s *MemoryStore) Pop() (interfaces.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-
+	best := -1
 	for i, task := range s.queue {
 		if task.ScheduledAt.After(now) {
 			continue
 		}
-
-		s.queue = append(s.queue[:i], s.queue[i+1:]...)
-		s.pending = append(s.pending, task)
-		return task, nil
+		if best == -1 || task.Priority > s.queue[best].Priority {
+			best = i
+		}
+	}
+	if best == -1 {
+		return interfaces.Task{}, errors.New("no ready tasks available")
 	}
 
-	return interfaces.Task{}, errors.New("no ready tasks available")
+	task := s.queue[best]
+	s.queue = append(s.queue[:best], s.queue[best+1:]...)
+	s.pending = append(s.pending, task)
+	return task, nil
 }
 
 func (s *MemoryStore) Ack(task interfaces.Task) error {
