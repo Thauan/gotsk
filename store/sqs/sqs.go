@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/Thauan/gotsk/interfaces"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 type Store struct {
@@ -99,4 +101,18 @@ func (s *Store) Ack(task interfaces.Task) error {
 
 func awsString(s string) *string {
 	return &s
+}
+
+// Size devolve a contagem aproximada de mensagens na fila (o SQS não dá um
+// número exato).
+func (s *Store) Size(ctx context.Context) (int, error) {
+	out, err := s.client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       &s.queueURL,
+		AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameApproximateNumberOfMessages},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("lendo tamanho da fila SQS: %w", err)
+	}
+	n, err := strconv.Atoi(out.Attributes[string(sqstypes.QueueAttributeNameApproximateNumberOfMessages)])
+	return n, err
 }

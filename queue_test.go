@@ -2,6 +2,7 @@ package gotsk
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -94,4 +95,94 @@ func waitFor[T any](t *testing.T, ch <-chan T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("tempo esgotado esperando o evento")
 	}
+}
+
+// RequeueDead devolve as tasks da dead-letter para a fila principal.
+func TestRequeueDeadMovesTasksBack(t *testing.T) {
+	store := NewMemoryStore()
+	dlq := NewMemoryStore()
+	queue := NewWithStore(1, store)
+	queue.SetDeadLetter(dlq)
+	queue.Register("job", func(ctx context.Context, p interfaces.Payload) error { return nil })
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, dlq.Push(interfaces.Task{ID: fmt.Sprintf("dead-%d", i), Name: "job", Status: "failed", Payload: interfaces.Payload{"i": i}}))
+	}
+
+	moved, err := queue.RequeueDead(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 3, moved)
+	require.Equal(t, 3, store.LenQueue())
+	require.Equal(t, 0, dlq.LenQueue())
+}
+
+func TestRequeueDeadWithoutDeadLetter(t *testing.T) {
+	queue := NewWithStore(1, NewMemoryStore())
+	_, err := queue.RequeueDead(context.Background())
+	require.ErrorIs(t, err, ErrNoDeadLetter)
+}
+
+// DeadLetterSize conta a dead-letter quando o store sabe contar.
+func TestDeadLetterSize(t *testing.T) {
+	dlq := NewMemoryStore()
+	queue := NewWithStore(1, NewMemoryStore())
+
+	require.False(t, queue.DeadLetterConfigured())
+
+	queue.SetDeadLetter(dlq)
+	require.True(t, queue.DeadLetterConfigured())
+
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "a", Name: "job", Status: "failed"}))
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "b", Name: "job", Status: "failed"}))
+
+	n, ok, err := queue.DeadLetterSize(context.Background())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 2, n)
+}
+
+// Uma dead-letter que sempre devolve a mesma task (ela volta a falhar e
+// retorna durante a chamada) não pode fazer RequeueDead rodar em loop.
+type repeatingDead struct {
+	*MemoryStore
+	task interfaces.Task
+}
+
+func (d *repeatingDead) Pop() (interfaces.Task, error)     { return d.task, nil }
+func (d *repeatingDead) Ack(interfaces.Task) error         { return nil }
+func (d *repeatingDead) Size(context.Context) (int, error) { return 1, nil }
+
+func TestRequeueDeadDoesNotLoop(t *testing.T) {
+	store := NewMemoryStore()
+	dlq := &repeatingDead{MemoryStore: NewMemoryStore(), task: interfaces.Task{ID: "same", Name: "job"}}
+	queue := NewWithStore(1, store)
+	queue.SetDeadLetter(dlq)
+	queue.Register("job", func(ctx context.Context, p interfaces.Payload) error { return nil })
+
+	moved, err := queue.RequeueDead(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, moved, "cada task é movida uma vez por chamada")
+	require.Equal(t, 1, store.LenQueue())
+}
+
+// Contagem atrasada: o store diz que está vazio, mas tem tasks (é o que
+// acontece com ApproximateNumberOfMessages do SQS logo após um envio).
+// RequeueDead não pode depender dessa contagem para decidir o que devolver.
+type staleCountDead struct{ *MemoryStore }
+
+func (d *staleCountDead) Size(context.Context) (int, error) { return 0, nil }
+
+func TestRequeueDeadIgnoresStaleCount(t *testing.T) {
+	store := NewMemoryStore()
+	dlq := &staleCountDead{NewMemoryStore()}
+	queue := NewWithStore(1, store)
+	queue.SetDeadLetter(dlq)
+	queue.Register("job", func(ctx context.Context, p interfaces.Payload) error { return nil })
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "a", Name: "job"}))
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "b", Name: "job"}))
+
+	moved, err := queue.RequeueDead(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 2, moved)
+	require.Equal(t, 2, store.LenQueue())
 }

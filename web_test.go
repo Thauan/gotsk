@@ -287,3 +287,33 @@ func TestRequeueFromDashboardKeepsFilters(t *testing.T) {
 	require.True(t, strings.HasPrefix(loc, "/?status=failed&period=7d&"), loc)
 	require.Contains(t, loc, "msg=")
 }
+
+func TestSettingsShowsDeadLetterAndRequeuesIt(t *testing.T) {
+	repo := newMemHistory()
+	queue := NewWithStore(1, NewMemoryStore())
+	queue.SetHistory(repo)
+	dlq := NewMemoryStore()
+	queue.SetDeadLetter(dlq)
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "dead-1", Name: "job", Status: "failed", Payload: interfaces.Payload{"k": "v"}}))
+	require.NoError(t, dlq.Push(interfaces.Task{ID: "dead-2", Name: "job", Status: "failed"}))
+	queue.Register("job", func(ctx context.Context, p interfaces.Payload) error { return nil })
+	h, err := queue.uiHandler()
+	require.NoError(t, err)
+
+	_, body := get(t, h, "/settings")
+	require.Contains(t, body, "Dead-letter")
+	require.Contains(t, body, "/settings/dead/requeue")
+
+	rec := post(t, h, "/settings/dead/requeue", "", url.Values{})
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Contains(t, rec.Header().Get("Location"), "kind=ok")
+	n, _, err := queue.DeadLetterSize(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+}
+
+func TestSettingsWithoutDeadLetterHidesSection(t *testing.T) {
+	h, _, _ := newUITest(t)
+	_, body := get(t, h, "/settings")
+	require.NotContains(t, body, "/settings/dead/requeue")
+}

@@ -7,6 +7,10 @@
 //   - TASK_DURATION_MS: duração fixa de cada task em ms (padrão: aleatória de 0 a 30).
 //   - HISTORY_DRIVER: sqlite (padrão), dynamodb ou none.
 //   - SQLITE_PATH (padrão gotsk.db): arquivo do SQLite.
+//   - QUEUE_DRIVER: memory (padrão) ou sqs.
+//   - SQS_QUEUE_NAME (padrão gotsk-tasks): fila criada se não existir.
+//   - SQS_DLQ_NAME (opcional): fila de mortos para tasks que esgotam as tentativas.
+//   - SQS_ENDPOINT (opcional, ex.: LocalStack http://localstack:4566). Sem ele, usa a AWS real.
 //   - DYNAMODB_TABLE (padrão gotsk_tasks), DYNAMODB_ENDPOINT (opcional, ex.: DynamoDB Local).
 package main
 
@@ -23,12 +27,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	ddb "github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/Thauan/gotsk"
 	"github.com/Thauan/gotsk/history/dynamodb"
 	"github.com/Thauan/gotsk/history/sqlite"
 	"github.com/Thauan/gotsk/interfaces"
+	sqsstore "github.com/Thauan/gotsk/store/sqs"
 )
 
 func env(key, def string) string {
@@ -66,8 +73,67 @@ func openHistory() (interfaces.HistoryRepository, error) {
 	}
 }
 
+// openQueueStore escolhe o store da fila pela variável QUEUE_DRIVER.
+func openQueueStore() (interfaces.TaskStore, error) {
+	switch driver := env("QUEUE_DRIVER", "memory"); driver {
+	case "memory":
+		return gotsk.NewMemoryStore(), nil
+	case "sqs":
+		return newSQSStore(env("SQS_QUEUE_NAME", "gotsk-tasks"))
+	default:
+		return nil, fmt.Errorf("QUEUE_DRIVER desconhecido: %q", driver)
+	}
+}
+
+// newSQSStore cria (se preciso) a fila SQS com o nome dado e devolve o store.
+func newSQSStore(name string) (*sqsstore.Store, error) {
+	ctx := context.Background()
+	opts := []func(*config.LoadOptions) error{config.WithRegion(env("AWS_REGION", "us-east-1"))}
+	// Com endpoint local (LocalStack) usa credenciais fixas; na AWS real,
+	// a cadeia padrão (variáveis, ~/.aws, role) é usada.
+	if os.Getenv("SQS_ENDPOINT") != "" {
+		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			env("AWS_ACCESS_KEY_ID", "local"), env("AWS_SECRET_ACCESS_KEY", "local"), "")))
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	client := sqs.NewFromConfig(cfg, func(o *sqs.Options) {
+		if endpoint := os.Getenv("SQS_ENDPOINT"); endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+		}
+	})
+	// O SQS pode demorar a responder ao subir o container (ex.: LocalStack).
+	var out *sqs.CreateQueueOutput
+	for attempt := 1; ; attempt++ {
+		out, err = client.CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: aws.String(name)})
+		if err == nil {
+			break
+		}
+		if attempt == 15 {
+			return nil, fmt.Errorf("criando fila SQS %s: %w", name, err)
+		}
+		log.Printf("SQS indisponível (tentativa %d), tentando de novo...", attempt)
+		time.Sleep(2 * time.Second)
+	}
+	log.Printf("fila SQS %s: %s", name, aws.ToString(out.QueueUrl))
+	return sqsstore.New(client, aws.ToString(out.QueueUrl)), nil
+}
+
 func main() {
-	queue := gotsk.NewWithStore(4, gotsk.NewMemoryStore())
+	store, err := openQueueStore()
+	if err != nil {
+		log.Fatalf("erro ao abrir a fila: %v", err)
+	}
+	queue := gotsk.NewWithStore(4, store)
+	if dlqName := os.Getenv("SQS_DLQ_NAME"); dlqName != "" && env("QUEUE_DRIVER", "memory") == "sqs" {
+		dlq, err := newSQSStore(dlqName)
+		if err != nil {
+			log.Fatalf("erro ao abrir a dead-letter: %v", err)
+		}
+		queue.SetDeadLetter(dlq)
+	}
 
 	history, err := openHistory()
 	if err != nil {

@@ -92,6 +92,9 @@ func (q *Queue) process(task interfaces.Task, workerID string) {
 			task.Retries = attempt + 1
 			q.publish(task)
 		}
+		if attempt == q.maxRetries {
+			break // última tentativa: não há o que esperar
+		}
 		if !sleepCtx(q.ctx, simpleBackoff(attempt)) {
 			// Encerramento durante a retentativa: a task não é confirmada,
 			// então um store durável (SQS, Redis) a entrega de novo depois.
@@ -107,6 +110,23 @@ func (q *Queue) process(task interfaces.Task, workerID string) {
 	task.Status = "failed"
 	task.FinishedAt = time.Now()
 	q.publish(task)
+	q.deadLetter(task, workerID)
 
 	log.Printf("💥 Worker %s: task %s falhou após %d tentativas", workerID, task.ID, q.maxRetries+1)
+}
+
+// deadLetter tira a task da fila principal. Com dead-letter configurada, a
+// task é gravada lá antes; se a gravação falhar, a task não é confirmada e
+// o store a entrega de novo. Sem dead-letter, a task é descartada da fila
+// (o registro continua no histórico), em vez de ser reentregue para sempre.
+func (q *Queue) deadLetter(task interfaces.Task, workerID string) {
+	if q.dlq != nil {
+		if err := q.dlq.Push(task); err != nil {
+			log.Printf("⚠️ Worker %s: task %s não foi para a dead-letter (%v); será entregue de novo", workerID, task.ID, err)
+			return
+		}
+	}
+	if err := q.store.Ack(task); err != nil {
+		log.Printf("erro ao confirmar task %s após falha definitiva: %v", task.ID, err)
+	}
 }

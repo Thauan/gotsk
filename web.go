@@ -360,6 +360,18 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 		q.Resume()
 		return newTranslator(langFromRequest(r))("msg.resumed"), false
 	}))
+	mux.HandleFunc("/settings/dead/requeue", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
+		tr := newTranslator(langFromRequest(r))
+		n, err := q.RequeueDead(r.Context())
+		if err != nil {
+			if errors.Is(err, ErrNoDeadLetter) {
+				return tr("err.noDeadLetter"), true
+			}
+			log.Printf("erro ao devolver dead-letter: %v", err)
+			return tr("msg.deadRequeueError"), true
+		}
+		return tr("msg.deadRequeued", n), false
+	}))
 	mux.HandleFunc("/settings/history/purge", q.action(func(w http.ResponseWriter, r *http.Request) (string, bool) {
 		tr := newTranslator(langFromRequest(r))
 		if q.repo == nil {
@@ -473,14 +485,17 @@ func sameOrigin(r *http.Request) bool {
 
 type settingsView struct {
 	shell
-	Flash      string
-	FlashError bool
-	Paused     bool
-	Workers    int
-	Uptime     string
-	HasHistory bool
-	Backend    string
-	Counts     interfaces.HistoryCounts
+	DeadConfigured bool
+	DeadCount      int
+	DeadCountOK    bool
+	Flash          string
+	FlashError     bool
+	Paused         bool
+	Workers        int
+	Uptime         string
+	HasHistory     bool
+	Backend        string
+	Counts         interfaces.HistoryCounts
 }
 
 func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
@@ -492,6 +507,14 @@ func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
 		Workers:    q.GetWorkers(),
 		Uptime:     q.Uptime().Round(time.Second).String(),
 		HasHistory: q.repo != nil,
+	}
+	view.DeadConfigured = q.DeadLetterConfigured()
+	if view.DeadConfigured {
+		n, ok, err := q.DeadLetterSize(r.Context())
+		if err != nil {
+			log.Printf("erro ao contar dead-letter: %v", err)
+		}
+		view.DeadCount, view.DeadCountOK = n, ok && err == nil
 	}
 	if q.repo == nil {
 		return view, nil

@@ -70,3 +70,9 @@ func (s *Store) Ack(task interfaces.Task) error {
 
 	return s.client.LRem(context.Background(), s.pendingKey, 1, data).Err()
 }
+
+// Size devolve quantas tasks estão na fila.
+func (s *Store) Size(ctx context.Context) (int, error) {
+	n, err := s.client.LLen(ctx, s.queueKey).Result()
+	return int(n), err
+}

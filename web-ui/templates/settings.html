@@ -54,6 +54,22 @@
             </form>
           </section>
 
+          {{if .DeadConfigured}}
+          <section class="rounded-lg border border-gray-200 bg-white p-6">
+            <h2 class="text-lg font-semibold">{{call .T "settings.deadLetter"}}</h2>
+            <p class="mt-1 text-sm text-gray-500">
+              {{call .T "settings.deadLetterDesc"}} <strong>{{if .DeadCountOK}}{{.DeadCount}}{{else}}—{{end}}</strong> {{call .T "settings.deadLetterTail"}}
+            </p>
+            <form method="post" action="/settings/dead/requeue" class="mt-4"
+                  onsubmit="return confirm('{{printf (call .T "confirm.deadRequeue") .DeadCount}}')">
+              <button {{if or (not .DeadCountOK) (eq .DeadCount 0)}}disabled{{end}}
+                      class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">
+                {{call .T "settings.deadLetterRequeue"}}
+              </button>
+            </form>
+          </section>
+          {{end}}
+
           <section class="rounded-lg border border-red-200 bg-white p-6">
             <h2 class="text-lg font-semibold text-red-700">{{call .T "settings.clearHistory"}}</h2>
             <p class="mt-1 text-sm text-gray-500">{{call .T "settings.clearDesc"}}</p>

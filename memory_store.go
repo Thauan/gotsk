@@ -1,6 +1,7 @@
 package gotsk
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -77,6 +78,11 @@ func (s *MemoryStore) Ack(task interfaces.Task) error {
 		}
 	}
 	return errors.New("task not found in pending")
+}
+
+// Size devolve quantas tasks estão na fila (sem contar as pendentes).
+func (s *MemoryStore) Size(_ context.Context) (int, error) {
+	return s.LenQueue(), nil
 }
 
 func equalPayload(a, b interfaces.Payload) bool {

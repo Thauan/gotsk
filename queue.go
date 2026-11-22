@@ -26,6 +26,7 @@ type Queue struct {
 	maxRetries   int
 	middlewares  []interfaces.Middleware
 	repo         interfaces.HistoryRepository
+	dlq          interfaces.TaskStore
 	paused       atomic.Bool
 	startedAt    atomic.Int64 // unix nano; 0 = não iniciada
 	sseClients   map[chan interfaces.Task]bool
@@ -110,6 +111,68 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 
 // 	return q.store.Push(task)
 // }
+
+// ErrNoDeadLetter é retornado por operações que dependem de SetDeadLetter.
+var ErrNoDeadLetter = errors.New("dead-letter não configurada")
+
+// SetDeadLetter define a fila de mortos: onde vão as tasks que esgotam as
+// tentativas. Ela pode ser outro store (ex.: uma segunda fila SQS).
+func (q *Queue) SetDeadLetter(dlq interfaces.TaskStore) {
+	q.dlq = dlq
+}
+
+// DeadLetterConfigured diz se há uma dead-letter definida.
+func (q *Queue) DeadLetterConfigured() bool { return q.dlq != nil }
+
+// DeadLetterSize devolve quantas tasks há na dead-letter. ok é false quando o
+// store da dead-letter não sabe contar (não implementa interfaces.Sized).
+func (q *Queue) DeadLetterSize(ctx context.Context) (n int, ok bool, err error) {
+	sized, isSized := q.dlq.(interfaces.Sized)
+	if !isSized {
+		return 0, false, nil
+	}
+	n, err = sized.Size(ctx)
+	return n, err == nil, err
+}
+
+// RequeueDead devolve tasks da dead-letter para a fila principal, até o
+// limite de maxRequeue. Devolve quantas foram movidas.
+func (q *Queue) RequeueDead(ctx context.Context) (int, error) {
+	if q.dlq == nil {
+		return 0, ErrNoDeadLetter
+	}
+	// Não usa a contagem do store como limite: ela pode estar atrasada (no SQS
+	// é aproximada). Para quando o store fica vazio, quando uma task volta a
+	// aparecer nesta chamada (ela falhou de novo e foi para a dead-letter) ou
+	// ao atingir maxRequeue.
+	limit := maxRequeue
+	seen := make(map[string]bool)
+	moved := 0
+	for moved < limit {
+		if err := ctx.Err(); err != nil {
+			return moved, err
+		}
+		task, err := q.dlq.Pop()
+		if err != nil {
+			// Store vazio (ou indisponível): para aqui. Quem chama vê a contagem.
+			return moved, nil
+		}
+		if seen[task.ID] {
+			return moved, nil
+		}
+		seen[task.ID] = true
+		if err := q.store.Push(task); err != nil {
+			return moved, fmt.Errorf("devolvendo task %s: %w", task.ID, err)
+		}
+		if err := q.dlq.Ack(task); err != nil {
+			log.Printf("erro ao confirmar task %s na dead-letter: %v", task.ID, err)
+		}
+		task.Status = "queued"
+		q.publish(task)
+		moved++
+	}
+	return moved, nil
+}
 
 // ErrNoHistory é retornado por operações que dependem do histórico.
 var ErrNoHistory = errors.New("histórico não configurado")
