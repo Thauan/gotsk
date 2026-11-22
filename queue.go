@@ -362,8 +362,13 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 	}()
 }
 
+// sseClientBuffer é o número de eventos que podem ficar pendentes para um
+// cliente SSE. Sem buffer, qualquer rajada perde eventos enquanto o streamer
+// está escrevendo na conexão.
+const sseClientBuffer = 1024
+
 func (q *Queue) Subscribe() chan interfaces.Task {
-	taskCh := make(chan interfaces.Task)
+	taskCh := make(chan interfaces.Task, sseClientBuffer)
 
 	q.registerSSEClient(taskCh)
 
