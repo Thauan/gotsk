@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    depends_on:
+      - dynamodb
+    ports:
+      - "${UI_HOST_PORT:-18080}:8080"        # painel e /events
+      - "${TRIGGER_HOST_PORT:-19090}:9090"   # gatilho de rajada
+    environment:
+      UI_ADDR: ":8080"
+      TRIGGER_ADDR: ":9090"
+      TASK_DURATION_MS: "${TASK_DURATION_MS:-1500}"
+      HISTORY_DRIVER: "${HISTORY_DRIVER:-sqlite}"
+      QUEUE_DRIVER: "${QUEUE_DRIVER:-memory}"
+      GOTSK_UI_TOKEN: "${GOTSK_UI_TOKEN:-}"
+      SQS_QUEUE_NAME: "gotsk-tasks"
+      SQS_DLQ_NAME: "${SQS_DLQ_NAME:-gotsk-tasks-dead}"
+      SQS_ENDPOINT: "http://localstack:4566"
+      SQLITE_PATH: "/data/gotsk.db"
+      DYNAMODB_ENDPOINT: "http://dynamodb:8000"
+      DYNAMODB_TABLE: "gotsk_tasks"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "local"       # DynamoDB Local aceita qualquer valor
+      AWS_SECRET_ACCESS_KEY: "local"
+    volumes:
+      - gotsk-data:/data
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "${DYNAMODB_HOST_PORT:-18000}:8000"
+
+  # Opcional, para testar com SQS sem conta AWS: docker compose --profile sqs up -d
+  localstack:
+    image: localstack/localstack:3.8
+    profiles: ["sqs"]
+    environment:
+      SERVICES: sqs
+    ports:
+      - "${LOCALSTACK_HOST_PORT:-4566}:4566"
+
+volumes:
+  gotsk-data:

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="{{.Lang}}" class="h-full bg-gray-50">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{call .T "brand"}} · {{call .T "login.title"}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="flex h-full items-center justify-center text-gray-900">
+    <main class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8">
+      <h1 class="text-2xl font-bold">{{call .T "brand"}}</h1>
+      <p class="mt-1 text-sm text-gray-500">{{call .T "login.hint"}}</p>
+
+      {{if .Error}}
+      <div class="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">{{call .T "login.invalid"}}</div>
+      {{end}}
+
+      <form method="post" action="/login" class="mt-6 space-y-4">
+        <input type="hidden" name="back" value="{{.Back}}" />
+        <label class="block text-sm font-medium">
+          {{call .T "login.token"}}
+          <input type="password" name="token" required autofocus autocomplete="current-password"
+                 class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
+        </label>
+        <button class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">{{call .T "login.submit"}}</button>
+      </form>
+    </main>
+  </body>
+</html>

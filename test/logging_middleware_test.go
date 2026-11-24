@@ -50,14 +50,14 @@ func TestLoggingMiddleware(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(logged, "🚀 Iniciando task com payload") {
+	if !strings.Contains(logged, "Start time") {
 		t.Errorf("esperava log de início, mas não encontrou:\n%s", logged)
 	}
-	if !strings.Contains(logged, "✅ Task finalizada com sucesso") {
+	if !strings.Contains(logged, "Task finished") {
 		t.Errorf("esperava log de finalização com sucesso, mas não encontrou:\n%s", logged)
 	}
-	if !strings.Contains(logged, "⏱️  Duração:") {
-		t.Errorf("esperava log de duração, mas não encontrou:\n%s", logged)
+	if !strings.Contains(logged, "Duration") {
+		t.Errorf("expected a duration log, but found none:\n%s", logged)
 	}
 	if !strings.Contains(logged, "executando task") {
 		t.Errorf("esperava log do handler, mas não encontrou:\n%s", logged)

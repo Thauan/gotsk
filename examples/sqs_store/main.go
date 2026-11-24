@@ -7,7 +7,8 @@ import (
 
 	"github.com/Thauan/gotsk"
 	"github.com/Thauan/gotsk/interfaces"
-	"github.com/Thauan/gotsk/middlewares"
+	zapmw "github.com/Thauan/gotsk/middlewares/zap"
+	sqsstore "github.com/Thauan/gotsk/store/sqs"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"go.uber.org/zap"
@@ -29,13 +30,13 @@ func main() {
 	}
 	defer logger.Sync()
 
-	store := interfaces.NewSQSStore(
+	store := sqsstore.New(
 		client,
 		"https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
 	)
 
 	queue := gotsk.NewWithStore(4, store)
-	queue.Use(middlewares.ZapLoggingMiddleware(logger))
+	queue.Use(zapmw.LoggingMiddleware(logger))
 
 	queue.Register("send_email", func(ctx context.Context, payload interfaces.Payload) error {
 		log.Println("Enviando email para:", payload["to"])

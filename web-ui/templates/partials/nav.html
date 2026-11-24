@@ -1,0 +1,75 @@
+{{define "sidebar-assets"}}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+<style>
+  #sidebar { width: 16rem; padding: 1.5rem; transition: width .2s ease, padding .2s ease; }
+  #sidebar.collapsed { width: 4rem; padding: .75rem .5rem; }
+  #sidebar.collapsed .label,
+  #sidebar.collapsed .brand { display: none; }
+  #sidebar.collapsed .nav-item,
+  #sidebar.collapsed .nav-action { justify-content: center; }
+  #sidebar.collapsed .sidebar-head { justify-content: center; }
+  #sidebar .toggle-icon { transition: transform .2s ease; }
+  #sidebar.collapsed .toggle-icon { transform: rotate(180deg); }
+</style>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-head flex items-center justify-between gap-2">
+  <h1 class="brand text-2xl font-bold">{{call .T "brand"}}</h1>
+  <button type="button" id="sidebar-toggle" aria-expanded="true"
+          data-expand="{{call .T "nav.expand"}}" data-collapse="{{call .T "nav.collapse"}}"
+          aria-label="{{call .T "nav.collapse"}}"
+          class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+    <i class="toggle-icon fa-solid fa-angles-left" aria-hidden="true"></i>
+  </button>
+</div>
+<nav class="mt-6 flex flex-col gap-1">
+  <a href="/" title="{{call .T "nav.tasks"}}"
+     class="nav-item flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium {{if eq .Active "tasks"}}bg-gray-900 text-white{{else}}text-gray-700 hover:bg-gray-100{{end}}">
+    <i aria-hidden="true" class="fa-solid fa-list-check w-5 text-center"></i><span class="label">{{call .T "nav.tasks"}}</span>
+  </a>
+  <a href="/settings" title="{{call .T "nav.settings"}}"
+     class="nav-item flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium {{if eq .Active "settings"}}bg-gray-900 text-white{{else}}text-gray-700 hover:bg-gray-100{{end}}">
+    <i aria-hidden="true" class="fa-solid fa-gear w-5 text-center"></i><span class="label">{{call .T "nav.settings"}}</span>
+  </a>
+</nav>
+{{if .AuthEnabled}}
+<form method="post" action="/logout" class="mt-2">
+  <button class="nav-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100">
+    <i aria-hidden="true" class="fa-solid fa-right-from-bracket w-5 text-center"></i><span class="label">{{call .T "nav.logout"}}</span>
+  </button>
+</form>
+{{end}}
+{{end}}
+
+{{define "lang-flags"}}
+<div class="lang-flags flex justify-end gap-2" role="group" aria-label="{{call .T "lang.label"}}">
+  {{range .Flags}}
+  <a href="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}"
+     class="rounded p-0.5 {{if .Active}}ring-2 ring-gray-900{{else}}opacity-60 hover:opacity-100{{end}}">{{.Icon}}</a>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar-script"}}
+<script>
+  (() => {
+    const sidebar = document.getElementById("sidebar");
+    const btn = document.getElementById("sidebar-toggle");
+    const KEY = "gotsk.sidebar.collapsed";
+    const apply = (collapsed) => {
+      sidebar.classList.toggle("collapsed", collapsed);
+      btn.setAttribute("aria-expanded", String(!collapsed));
+      btn.setAttribute("aria-label", collapsed ? btn.dataset.expand : btn.dataset.collapse);
+    };
+    let saved = false;
+    try { saved = localStorage.getItem(KEY) === "1"; } catch (e) {}
+    apply(saved);
+    btn.addEventListener("click", () => {
+      const collapsed = !sidebar.classList.contains("collapsed");
+      apply(collapsed);
+      try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch (e) {}
+    });
+  })();
+</script>
+{{end}}

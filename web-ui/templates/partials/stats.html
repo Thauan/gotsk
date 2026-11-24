@@ -1,0 +1,22 @@
+{{define "stats"}}
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">{{call .T "stats.completed"}}</p>
+  <p class="mt-2 text-3xl font-bold">{{.Counts.Completed}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">{{call .T "stats.failed"}}</p>
+  <p class="mt-2 text-3xl font-bold text-red-600">{{.Counts.Failed}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">{{call .T "stats.pending"}}</p>
+  <p class="mt-2 text-3xl font-bold">{{.Counts.Queued}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">{{call .T "stats.retried"}}</p>
+  <p class="mt-2 text-3xl font-bold">{{.Counts.Retried}}</p>
+</div>
+<div class="rounded-lg border border-gray-200 bg-white p-5">
+  <p class="text-sm text-gray-500">{{call .T "stats.scheduled"}}</p>
+  <p class="mt-2 text-3xl font-bold">{{.Counts.Scheduled}}</p>
+</div>
+{{end}}

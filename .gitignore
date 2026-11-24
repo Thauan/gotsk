@@ -1,0 +1,17 @@
+# Binários gerados por go build (ex.: cmd/repro/repro)
+/cmd/repro/repro
+*.exe
+*.test
+*.out
+
+# Bancos locais do histórico (SQLite)
+*.db
+*.db-journal
+
+# Dependências e caches do front-end
+web-ui/node_modules/
+
+# Editores e sistema
+.DS_Store
+.idea/
+.vscode/
