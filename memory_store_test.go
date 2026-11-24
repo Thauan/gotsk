@@ -40,3 +40,19 @@ func TestPriorityOrdersReadyTasks(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, []int{5, 3, 1}, order)
 }
+
+// Ack confirma pelo ID: duas tasks com o mesmo nome e payload não podem ser
+// confundidas uma com a outra.
+func TestAckMatchesByIDNotPayload(t *testing.T) {
+	store := NewMemoryStore()
+	require.NoError(t, store.Push(interfaces.Task{ID: "a", Name: "job", Payload: interfaces.Payload{"k": 1}}))
+	require.NoError(t, store.Push(interfaces.Task{ID: "b", Name: "job", Payload: interfaces.Payload{"k": 1}}))
+	a, err := store.Pop()
+	require.NoError(t, err)
+	b, err := store.Pop()
+	require.NoError(t, err)
+
+	require.NoError(t, store.Ack(b))
+	require.Len(t, store.pending, 1)
+	require.Equal(t, a.ID, store.pending[0].ID, "só a task confirmada pode sair dos pendentes")
+}

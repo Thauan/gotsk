@@ -2,6 +2,8 @@ package interfaces
 
 import "context"
 
+// TaskStore is the storage the queue uses to hold tasks.
+// Pop returns the next ready task; Ack confirms that a popped task is done.
 type TaskStore interface {
 	Push(task Task) error
 	Pop() (Task, error)

@@ -40,6 +40,7 @@ var added = []struct{ name, ddl string }{
 	{"attempts", "TEXT NOT NULL DEFAULT '[]'"},
 }
 
+// Repository stores task history in a SQLite database.
 type Repository struct {
 	db *sql.DB
 }
@@ -92,11 +93,13 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
+// Close closes the database.
 func (r *Repository) Close() error { return r.db.Close() }
 
 const selectColumns = `id, name, status, payload, retries, priority, scheduled_at, created_at,
 	started_at, finished_at, worker_id, error, attempts`
 
+// Save inserts or updates a task by ID.
 func (r *Repository) Save(ctx context.Context, task interfaces.Task) error {
 	payload, err := json.Marshal(task.Payload)
 	if err != nil {
@@ -136,6 +139,7 @@ func nonNilAttempts(a []interfaces.Attempt) []interfaces.Attempt {
 	return a
 }
 
+// Get returns the task with the given ID, or interfaces.ErrTaskNotFound.
 func (r *Repository) Get(ctx context.Context, id string) (interfaces.Task, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+selectColumns+` FROM tasks WHERE id = ?`, id)
 	t, err := scanTask(row)
@@ -145,6 +149,7 @@ func (r *Repository) Get(ctx context.Context, id string) (interfaces.Task, error
 	return t, err
 }
 
+// List returns tasks matching the filter, newest first.
 func (r *Repository) List(ctx context.Context, f interfaces.HistoryFilter) ([]interfaces.Task, error) {
 	where, args := whereClause(f)
 	limit := f.Limit
@@ -171,6 +176,7 @@ func (r *Repository) List(ctx context.Context, f interfaces.HistoryFilter) ([]in
 	return tasks, rows.Err()
 }
 
+// Counts returns how many tasks are in each status, created since the given time.
 func (r *Repository) Counts(ctx context.Context, since time.Time) (interfaces.HistoryCounts, error) {
 	var c interfaces.HistoryCounts
 	rows, err := r.db.QueryContext(ctx, `
@@ -209,11 +215,13 @@ func (r *Repository) Counts(ctx context.Context, since time.Time) (interfaces.Hi
 	return c, err
 }
 
+// Delete removes the task with the given ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM tasks WHERE id = ?`, id)
 	return err
 }
 
+// Purge removes every task matching the filter and returns how many were removed.
 func (r *Repository) Purge(ctx context.Context, f interfaces.HistoryFilter) (int, error) {
 	where, args := whereClause(f)
 	res, err := r.db.ExecContext(ctx, `DELETE FROM tasks`+where, args...)

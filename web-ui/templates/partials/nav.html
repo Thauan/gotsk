@@ -33,6 +33,13 @@
     <i aria-hidden="true" class="fa-solid fa-gear w-5 text-center"></i><span class="label">{{call .T "nav.settings"}}</span>
   </a>
 </nav>
+{{if .AuthEnabled}}
+<form method="post" action="/logout" class="mt-2">
+  <button class="nav-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100">
+    <i aria-hidden="true" class="fa-solid fa-right-from-bracket w-5 text-center"></i><span class="label">{{call .T "nav.logout"}}</span>
+  </button>
+</form>
+{{end}}
 {{end}}
 
 {{define "lang-flags"}}

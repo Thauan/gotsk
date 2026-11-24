@@ -2,6 +2,7 @@ package interfaces
 
 import "time"
 
+// Task is a unit of work and the record of its execution.
 type Task struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`

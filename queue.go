@@ -12,8 +12,11 @@ import (
 	"github.com/Thauan/gotsk/interfaces"
 )
 
+// HandlerFunc is the function that processes a task.
 type HandlerFunc interfaces.HandlerFunc
 
+// Queue runs tasks on a fixed pool of workers, backed by a TaskStore.
+// Create one with NewWithStore, register handlers, then call Start.
 type Queue struct {
 	mu           sync.RWMutex
 	handlers     map[string]HandlerFunc
@@ -27,20 +30,26 @@ type Queue struct {
 	middlewares  []interfaces.Middleware
 	repo         interfaces.HistoryRepository
 	dlq          interfaces.TaskStore
+	uiToken      string
+	uiSession    string
 	paused       atomic.Bool
 	startedAt    atomic.Int64 // unix nano; 0 = não iniciada
 	sseClients   map[chan interfaces.Task]bool
 	sseClientsMu sync.Mutex
 }
 
+// Use adds a middleware. Middlewares run in the order they were added,
+// and apply to every task processed after the call.
 func (q *Queue) Use(mw interfaces.Middleware) {
 	q.middlewares = append(q.middlewares, mw)
 }
 
+// GetWorkers returns the number of workers the queue was created with.
 func (q *Queue) GetWorkers() int {
 	return q.workers
 }
 
+// NewWithStore creates a queue with the given number of workers and store.
 func NewWithStore(workers int, store interfaces.TaskStore) *Queue {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Queue{
@@ -63,6 +72,8 @@ func (q *Queue) Register(name string, handler HandlerFunc) {
 	q.handlers[name] = handler
 }
 
+// Enqueue adds a task for the named handler. It fails if no handler
+// is registered under name.
 func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 	// O lock protege só a leitura do mapa de handlers. A escrita no store e
 	// no histórico acontece sem ele, para não bloquear Register.
@@ -113,7 +124,7 @@ func (q *Queue) Enqueue(name string, payload interfaces.Payload) error {
 // }
 
 // ErrNoDeadLetter é retornado por operações que dependem de SetDeadLetter.
-var ErrNoDeadLetter = errors.New("dead-letter não configurada")
+var ErrNoDeadLetter = errors.New("dead-letter not configured")
 
 // SetDeadLetter define a fila de mortos: onde vão as tasks que esgotam as
 // tentativas. Ela pode ser outro store (ex.: uma segunda fila SQS).
@@ -165,7 +176,7 @@ func (q *Queue) RequeueDead(ctx context.Context) (int, error) {
 			return moved, fmt.Errorf("devolvendo task %s: %w", task.ID, err)
 		}
 		if err := q.dlq.Ack(task); err != nil {
-			log.Printf("erro ao confirmar task %s na dead-letter: %v", task.ID, err)
+			log.Printf("error acknowledging task %s in the dead-letter: %v", task.ID, err)
 		}
 		task.Status = "queued"
 		q.publish(task)
@@ -175,7 +186,10 @@ func (q *Queue) RequeueDead(ctx context.Context) (int, error) {
 }
 
 // ErrNoHistory é retornado por operações que dependem do histórico.
-var ErrNoHistory = errors.New("histórico não configurado")
+var ErrNoHistory = errors.New("history not configured")
+
+// ErrTaskNotFailed é retornado por RequeueTask quando a task não está com falha.
+var ErrTaskNotFailed = errors.New("task is not failed")
 
 // Pause faz os workers pararem de pegar tasks novas. As tasks em execução
 // terminam normalmente, e Enqueue continua aceitando trabalho.
@@ -184,6 +198,7 @@ func (q *Queue) Pause() { q.paused.Store(true) }
 // Resume volta a processar as tasks pendentes.
 func (q *Queue) Resume() { q.paused.Store(false) }
 
+// Paused reports whether processing is paused.
 func (q *Queue) Paused() bool { return q.paused.Load() }
 
 // Uptime é o tempo desde Start. Zero se a fila não foi iniciada.
@@ -205,7 +220,7 @@ func (q *Queue) RequeueTask(ctx context.Context, id string) error {
 		return err
 	}
 	if t.Status != "failed" {
-		return fmt.Errorf("task %s não está com falha (status: %s)", id, t.Status)
+		return fmt.Errorf("task %s: %w (status: %s)", id, ErrTaskNotFailed, t.Status)
 	}
 	if err := q.Enqueue(t.Name, t.Payload); err != nil {
 		return err
@@ -240,6 +255,7 @@ func (q *Queue) RequeueFailed(ctx context.Context) (requeued, skipped int, err e
 	return requeued, skipped, nil
 }
 
+// Start launches the workers. Call it once, after registering handlers.
 func (q *Queue) Start() {
 	q.startedAt.Store(time.Now().UnixNano())
 	for range q.workers {
@@ -248,6 +264,8 @@ func (q *Queue) Start() {
 	}
 }
 
+// Stop cancels the queue context and waits for the workers to finish their
+// current task. Tasks waiting in a retry backoff are not waited for.
 func (q *Queue) Stop() {
 	q.cancel()
 	q.wg.Wait()
@@ -259,6 +277,8 @@ func (q *Queue) Stop() {
 	}
 }
 
+// EnqueueAt adds a task with options: priority and, optionally, a time
+// before which it must not run.
 func (q *Queue) EnqueueAt(name string, payload interfaces.Payload, options interfaces.TaskOptions) error {
 	task := interfaces.Task{
 		ID:          TaskId(),
@@ -300,6 +320,8 @@ func (q *Queue) unregisterSSEClient(ch chan interfaces.Task) {
 // está escrevendo na conexão.
 const sseClientBuffer = 1024
 
+// Subscribe returns a channel that receives every task state change.
+// The channel is buffered; events are dropped if the reader falls behind.
 func (q *Queue) Subscribe() chan interfaces.Task {
 	taskCh := make(chan interfaces.Task, sseClientBuffer)
 
@@ -326,7 +348,7 @@ func (q *Queue) publish(task interfaces.Task) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := q.repo.Save(ctx, task); err != nil {
-		log.Printf("erro ao salvar histórico da task %s: %v", task.ID, err)
+		log.Printf("error saving history for task %s: %v", task.ID, err)
 	}
 }
 
@@ -334,14 +356,11 @@ func (q *Queue) broadcast(task interfaces.Task) {
 	q.sseClientsMu.Lock()
 	defer q.sseClientsMu.Unlock()
 
-	log.Printf("Broadcasting task: %s", task.ID)
-
 	for ch := range q.sseClients {
 		select {
 		case ch <- task:
-			log.Printf("Sent task %s to client", task.ID)
 		default:
-			log.Printf("Client channel is full for task %s", task.ID)
+			log.Printf("SSE client buffer full, dropping event for task %s", task.ID)
 		}
 	}
 }

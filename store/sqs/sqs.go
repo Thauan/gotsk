@@ -7,18 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
 
 	"github.com/Thauan/gotsk/interfaces"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
+// Store is a TaskStore backed by an Amazon SQS queue.
+// Tasks popped but not acknowledged become visible again after the queue's visibility timeout.
 type Store struct {
 	client   *sqs.Client
 	queueURL string
-	mu       sync.Mutex
-	pending  map[string]string
 }
 
 // New cria um store SQS para a fila queueURL.
@@ -26,10 +26,10 @@ func New(client *sqs.Client, queueURL string) *Store {
 	return &Store{
 		client:   client,
 		queueURL: queueURL,
-		pending:  make(map[string]string),
 	}
 }
 
+// Push sends a task to the queue.
 func (s *Store) Push(task interfaces.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
@@ -47,6 +47,7 @@ func (s *Store) Push(task interfaces.Task) error {
 	return nil
 }
 
+// Pop receives the next task, waiting up to 10 seconds for one.
 func (s *Store) Pop() (interfaces.Task, error) {
 	resp, err := s.client.ReceiveMessage(context.TODO(), &sqs.ReceiveMessageInput{
 		QueueUrl:            &s.queueURL,
@@ -71,31 +72,24 @@ func (s *Store) Pop() (interfaces.Task, error) {
 		return interfaces.Task{}, errors.New("task missing ID")
 	}
 
-	s.mu.Lock()
-	s.pending[task.ID] = *msg.ReceiptHandle
-	s.mu.Unlock()
-
+	// O recibo acompanha a task: Ack usa esse valor, e não um mapa por ID,
+	// que se perderia se duas tasks com o mesmo ID estivessem em voo.
+	task.ReceiptHandle = aws.ToString(msg.ReceiptHandle)
 	return task, nil
 }
 
+// Ack deletes a popped task from the queue.
 func (s *Store) Ack(task interfaces.Task) error {
-	s.mu.Lock()
-	receipt, ok := s.pending[task.ID]
-	if !ok {
-		s.mu.Unlock()
-		return fmt.Errorf("receipt handle not found for task ID: %s", task.ID)
+	if task.ReceiptHandle == "" {
+		return fmt.Errorf("task %s has no receipt handle: it was not popped from this queue", task.ID)
 	}
-	delete(s.pending, task.ID)
-	s.mu.Unlock()
-
 	_, err := s.client.DeleteMessage(context.TODO(), &sqs.DeleteMessageInput{
 		QueueUrl:      &s.queueURL,
-		ReceiptHandle: &receipt,
+		ReceiptHandle: &task.ReceiptHandle,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to delete message from SQS: %w", err)
 	}
-
 	return nil
 }
 

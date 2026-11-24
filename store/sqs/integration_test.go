@@ -85,3 +85,31 @@ func createQueue(t *testing.T, ctx context.Context, client *sqs.Client, name str
 	})
 	return url
 }
+
+// Duas mensagens com o mesmo ID em voo precisam ser confirmadas cada uma com
+// o próprio recibo.
+func TestAckDuplicateIDsWithSQS(t *testing.T) {
+	endpoint := os.Getenv("SQS_ENDPOINT")
+	if endpoint == "" {
+		t.Skip("SQS_ENDPOINT não definido")
+	}
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("local", "local", "")),
+	)
+	require.NoError(t, err)
+	client := sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(endpoint) })
+	url := createQueue(t, ctx, client, fmt.Sprintf("gotsk-dup-%d", time.Now().UnixNano()))
+	store := sqsstore.New(client, url)
+
+	require.NoError(t, store.Push(interfaces.Task{ID: "same", Name: "job"}))
+	require.NoError(t, store.Push(interfaces.Task{ID: "same", Name: "job"}))
+	first, err := store.Pop()
+	require.NoError(t, err)
+	second, err := store.Pop()
+	require.NoError(t, err)
+
+	require.NoError(t, store.Ack(first))
+	require.NoError(t, store.Ack(second))
+}

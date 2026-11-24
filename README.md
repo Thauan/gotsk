@@ -119,6 +119,26 @@ gotsk.Run(queue, ":8080") // painel em http://localhost:8080
 
 Sem `SetHistory`, a fila funciona normalmente e o painel mostra só o aviso de histórico desativado.
 
+A tela de **Configurações** permite pausar e retomar o processamento, reenfileirar falhas, devolver a dead-letter para a fila e limpar o histórico (por escopo, com confirmação). O idioma é escolhido pelas bandeiras no topo da página: português (padrão) ou inglês, guardado num cookie e, na primeira visita, seguindo o idioma do navegador.
+
+## 💀 Dead-letter
+
+Tasks que esgotam as tentativas podem ir para uma fila de mortos. Sem ela, a task é confirmada e removida da fila (o registro continua no histórico), em vez de ser reentregue para sempre.
+
+```go
+dlq := redisstore.New("localhost:6379", "", 0, "gotsk:dead")
+queue.SetDeadLetter(dlq)
+
+// Devolve as tasks da dead-letter para a fila principal.
+moved, err := queue.RequeueDead(ctx)
+```
+
+A task só é confirmada na fila principal depois de gravada na dead-letter. Se a gravação falhar, ela é entregue de novo. Stores que contam as próprias mensagens (`interfaces.Sized`) mostram a contagem no painel.
+
+## ⏸️ Pausa
+
+`queue.Pause()` faz os workers pararem de pegar tasks novas. As que já estão rodando terminam, e `Enqueue` continua aceitando trabalho. `queue.Resume()` volta a processar. O estado da pausa não é persistido: reiniciar o processo volta a processar.
+
 ## ✅ Roadmap (ideias futuras)
 
 - Suporte a tasks com atraso (delayed jobs)

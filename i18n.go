@@ -48,6 +48,12 @@ func newTranslator(lang string) translator {
 
 var messages = map[string]map[string]string{
 	langPT: {
+		"nav.logout":                 "Sair",
+		"login.title":                "Entrar",
+		"login.token":                "Token de acesso",
+		"login.submit":               "Entrar",
+		"login.invalid":              "Token inválido.",
+		"login.hint":                 "Informe o token configurado em GOTSK_UI_TOKEN.",
 		"brand":                      "Gotsk",
 		"lang.label":                 "Idioma",
 		"nav.tasks":                  "Tarefas",
@@ -163,6 +169,7 @@ var messages = map[string]map[string]string{
 		"msg.requeuedSkipped":        " %d puladas: handler não registrado.",
 		"msg.requeueError":           "Erro ao reenfileirar as falhas. Veja o log do servidor.",
 		"msg.taskNotFound":           "Task não encontrada.",
+		"msg.taskNotFailed":          "Esta task não está com falha.",
 		"msg.taskRequeued":           "Task reenfileirada.",
 		"msg.taskRemoved":            "Task removida do histórico.",
 		"msg.taskDeleteError":        "Erro ao excluir a task.",
@@ -188,6 +195,12 @@ var messages = map[string]map[string]string{
 		"log.lastError":              "Último erro: %s",
 	},
 	langEN: {
+		"nav.logout":                 "Log out",
+		"login.title":                "Sign in",
+		"login.token":                "Access token",
+		"login.submit":               "Sign in",
+		"login.invalid":              "Invalid token.",
+		"login.hint":                 "Enter the token set in GOTSK_UI_TOKEN.",
 		"brand":                      "Gotsk",
 		"lang.label":                 "Language",
 		"nav.tasks":                  "Tasks",
@@ -303,6 +316,7 @@ var messages = map[string]map[string]string{
 		"msg.requeuedSkipped":        " %d skipped: handler not registered.",
 		"msg.requeueError":           "Error requeuing failures. See the server log.",
 		"msg.taskNotFound":           "Task not found.",
+		"msg.taskNotFailed":          "This task has not failed.",
 		"msg.taskRequeued":           "Task requeued.",
 		"msg.taskRemoved":            "Task removed from history.",
 		"msg.taskDeleteError":        "Error deleting task.",

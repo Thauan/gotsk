@@ -40,10 +40,10 @@ func TestZapLoggingMiddleware(t *testing.T) {
 	}
 
 	logs := buf.String()
-	if !contains(logs, "Iniciando task") {
+	if !contains(logs, "Starting task") {
 		t.Errorf("Log de início da task não encontrado. Logs: %s", logs)
 	}
-	if !contains(logs, "Task concluída com sucesso") {
+	if !contains(logs, "Task completed successfully") {
 		t.Errorf("Log de sucesso da task não encontrado. Logs: %s", logs)
 	}
 }

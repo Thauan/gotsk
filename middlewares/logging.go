@@ -40,6 +40,8 @@ func (st style) Printf(format string, a ...any) {
 	fmt.Print(st.Sprint(fmt.Sprintf(format, a...)))
 }
 
+// LoggingMiddleware logs the start, payload, result and duration of each task
+// to logger, in a boxed format.
 func LoggingMiddleware(logger *log.Logger) interfaces.Middleware {
 	successColor := style{"32;1"}
 	errorColor := style{"31;1"}
@@ -57,7 +59,7 @@ func LoggingMiddleware(logger *log.Logger) interfaces.Middleware {
 
 			printBox(separatorColor, "🚀 INICIANDO TASK", 50)
 			logger.Printf("│ %-15s: %s", "Task ID", infoColor.Sprint(taskID))
-			logger.Printf("│ %-15s: %s", "Hora de Início", infoColor.Sprint(start.Format("2006-01-02 15:04:05.000")))
+			logger.Printf("│ %-15s: %s", "Start time", infoColor.Sprint(start.Format("2006-01-02 15:04:05.000")))
 			logPayload(logger, payload)
 			printSeparator(separatorColor, 50)
 
@@ -66,21 +68,21 @@ func LoggingMiddleware(logger *log.Logger) interfaces.Middleware {
 			duration := time.Since(start)
 			printBox(separatorColor, "📊 RESUMO DA TASK", 50)
 			logger.Printf("│ %-15s: %s", "Task ID", infoColor.Sprint(taskID))
-			logger.Printf("│ %-15s: %s", "Duração", formatDuration(duration))
+			logger.Printf("│ %-15s: %s", "Duration", formatDuration(duration))
 
 			if err != nil {
 				logger.Printf("│ %-15s: %s", "Status", errorColor.Sprint("❌ Task falhou"))
 				logger.Printf("│ %-15s: %v", "Erro", errorColor.Sprint(err))
 			} else {
-				logger.Printf("│ %-15s: %s", "Status", successColor.Sprint("✅ Task finalizada"))
+				logger.Printf("│ %-15s: %s", "Status", successColor.Sprint("✅ Task finished"))
 			}
 
 			if duration > time.Second {
-				logger.Printf("│ %-15s: %s", "Performance", warningColor.Sprint("⚠️ LENTO"))
+				logger.Printf("│ %-15s: %s", "Performance", warningColor.Sprint("⚠️ SLOW"))
 			} else if duration > 500*time.Millisecond {
-				logger.Printf("│ %-15s: %s", "Performance", warningColor.Sprint("⏱️  MÉDIO"))
+				logger.Printf("│ %-15s: %s", "Performance", warningColor.Sprint("⏱️  MEDIUM"))
 			} else {
-				logger.Printf("│ %-15s: %s", "Performance", successColor.Sprint("⚡ RÁPIDO"))
+				logger.Printf("│ %-15s: %s", "Performance", successColor.Sprint("⚡ FAST"))
 			}
 
 			printSeparator(separatorColor, 50)

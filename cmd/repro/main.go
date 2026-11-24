@@ -127,6 +127,8 @@ func main() {
 		log.Fatalf("erro ao abrir a fila: %v", err)
 	}
 	queue := gotsk.NewWithStore(4, store)
+	// GOTSK_UI_TOKEN protege o painel. Vazio = sem autenticação (desenvolvimento).
+	queue.SetUIToken(os.Getenv("GOTSK_UI_TOKEN"))
 	if dlqName := os.Getenv("SQS_DLQ_NAME"); dlqName != "" && env("QUEUE_DRIVER", "memory") == "sqs" {
 		dlq, err := newSQSStore(dlqName)
 		if err != nil {

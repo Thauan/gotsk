@@ -21,9 +21,9 @@ func Run(queue *Queue, addr string) {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sig
-	log.Println("🔴 Encerrando...")
+	log.Println("🔴 Shutting down...")
 
 	cancel()
 	queue.Stop()
-	log.Println("✅ Finalizado com sucesso")
+	log.Println("✅ Stopped cleanly")
 }

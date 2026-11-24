@@ -118,6 +118,26 @@ gotsk.Run(queue, ":8080") // dashboard at http://localhost:8080
 
 Without `SetHistory` the queue works normally, and the dashboard only shows a notice that history is disabled.
 
+The **Settings** page can pause and resume processing, requeue failures, move the dead-letter back to the queue, and clear history (by scope, with confirmation). The language is chosen with the flags at the top of the page: Portuguese (default) or English, stored in a cookie and, on the first visit, following the browser language.
+
+## 💀 Dead-letter
+
+Tasks that exhaust their retries can go to a dead-letter queue. Without one, the task is acknowledged and removed from the queue (the history keeps the record), instead of being redelivered forever.
+
+```go
+dlq := redisstore.New("localhost:6379", "", 0, "gotsk:dead")
+queue.SetDeadLetter(dlq)
+
+// Moves the dead-letter tasks back to the main queue.
+moved, err := queue.RequeueDead(ctx)
+```
+
+A task is only acknowledged on the main queue after it is written to the dead-letter. If that write fails, the task is delivered again. Stores that can count their own messages (`interfaces.Sized`) show the count in the dashboard.
+
+## ⏸️ Pause
+
+`queue.Pause()` stops workers from picking up new tasks. Running tasks finish, and `Enqueue` keeps accepting work. `queue.Resume()` resumes processing. The pause state is not persisted: restarting the process resumes processing.
+
 ## ✅ Roadmap (future ideas)
 
 - Delayed jobs

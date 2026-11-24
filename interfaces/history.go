@@ -7,7 +7,7 @@ import (
 )
 
 // ErrTaskNotFound é retornado por Get quando a task não existe no histórico.
-var ErrTaskNotFound = errors.New("task não encontrada")
+var ErrTaskNotFound = errors.New("task not found")
 
 // HistoryRepository persiste o ciclo de vida das tasks para consulta na UI.
 // Ele é separado do TaskStore (que despacha trabalho): o TaskStore decide o
@@ -33,6 +33,7 @@ type HistoryFilter struct {
 	Limit  int       // 0 = DefaultHistoryLimit
 }
 
+// DefaultHistoryLimit is the page size used when a filter has no limit.
 const DefaultHistoryLimit = 100
 
 // HistoryCounts são as contagens exibidas nos cards da UI.

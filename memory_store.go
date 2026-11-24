@@ -9,24 +9,29 @@ import (
 	"github.com/Thauan/gotsk/interfaces"
 )
 
+// MemoryStore is an in-process TaskStore. Tasks are lost when the process exits.
+// It honors TaskOptions.Priority: the highest-priority ready task is popped first.
 type MemoryStore struct {
 	mu      sync.Mutex
 	queue   []interfaces.Task
 	pending []interfaces.Task
 }
 
+// LenQueue returns the number of tasks waiting to be popped.
 func (m *MemoryStore) LenQueue() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.queue)
 }
 
+// LenPending returns the number of popped tasks that have not been acknowledged.
 func (m *MemoryStore) LenPending() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.pending)
 }
 
+// NewMemoryStore returns an empty in-memory store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		queue:   []interfaces.Task{},
@@ -34,6 +39,7 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
+// Push adds a task to the queue.
 func (s *MemoryStore) Push(task interfaces.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -67,12 +73,13 @@ func (s *MemoryStore) Pop() (interfaces.Task, error) {
 	return task, nil
 }
 
+// Ack removes a popped task from the pending list, matched by ID.
 func (s *MemoryStore) Ack(task interfaces.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for i, t := range s.pending {
-		if t.Name == task.Name && equalPayload(t.Payload, task.Payload) {
+		if t.ID == task.ID {
 			s.pending = append(s.pending[:i], s.pending[i+1:]...)
 			return nil
 		}
@@ -83,16 +90,4 @@ func (s *MemoryStore) Ack(task interfaces.Task) error {
 // Size devolve quantas tasks estão na fila (sem contar as pendentes).
 func (s *MemoryStore) Size(_ context.Context) (int, error) {
 	return s.LenQueue(), nil
-}
-
-func equalPayload(a, b interfaces.Payload) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
 }

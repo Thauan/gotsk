@@ -47,6 +47,7 @@ type attemptItem struct {
 	Error      string `dynamodbav:"error"`
 }
 
+// Repository stores task history in a DynamoDB table keyed by "id".
 type Repository struct {
 	client *ddb.Client
 	table  string
@@ -82,6 +83,7 @@ func EnsureTable(ctx context.Context, client *ddb.Client, table string) error {
 	return waiter.Wait(ctx, &ddb.DescribeTableInput{TableName: aws.String(table)}, time.Minute)
 }
 
+// Save inserts or updates a task by ID.
 func (r *Repository) Save(ctx context.Context, task interfaces.Task) error {
 	av, err := attributevalue.MarshalMap(toItem(task))
 	if err != nil {
@@ -94,6 +96,7 @@ func (r *Repository) Save(ctx context.Context, task interfaces.Task) error {
 	return err
 }
 
+// Get returns the task with the given ID, or interfaces.ErrTaskNotFound.
 func (r *Repository) Get(ctx context.Context, id string) (interfaces.Task, error) {
 	out, err := r.client.GetItem(ctx, &ddb.GetItemInput{
 		TableName: aws.String(r.table),
@@ -112,6 +115,8 @@ func (r *Repository) Get(ctx context.Context, id string) (interfaces.Task, error
 	return fromItem(it), nil
 }
 
+// List returns tasks matching the filter, newest first.
+// It scans the table; see the package documentation for the cost.
 func (r *Repository) List(ctx context.Context, f interfaces.HistoryFilter) ([]interfaces.Task, error) {
 	items, err := r.scanAll(ctx, f.Since)
 	if err != nil {
@@ -138,6 +143,7 @@ func (r *Repository) List(ctx context.Context, f interfaces.HistoryFilter) ([]in
 	return tasks, nil
 }
 
+// Counts returns how many tasks are in each status, created since the given time.
 func (r *Repository) Counts(ctx context.Context, since time.Time) (interfaces.HistoryCounts, error) {
 	var c interfaces.HistoryCounts
 	items, err := r.scanAll(ctx, since)
@@ -178,6 +184,7 @@ func matches(it item, f interfaces.HistoryFilter) bool {
 	return true
 }
 
+// Delete removes the task with the given ID.
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	_, err := r.client.DeleteItem(ctx, &ddb.DeleteItemInput{
 		TableName: aws.String(r.table),
@@ -213,7 +220,7 @@ func (r *Repository) Purge(ctx context.Context, f interfaces.HistoryFilter) (int
 		pending := map[string][]types.WriteRequest{r.table: reqs}
 		for attempt := 0; len(pending) > 0; attempt++ {
 			if attempt > 5 {
-				return 0, errors.New("dynamodb: itens não processados após 5 tentativas")
+				return 0, errors.New("dynamodb: unprocessed items after 5 attempts")
 			}
 			out, err := r.client.BatchWriteItem(ctx, &ddb.BatchWriteItemInput{RequestItems: pending})
 			if err != nil {

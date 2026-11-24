@@ -12,6 +12,7 @@ services:
       TASK_DURATION_MS: "${TASK_DURATION_MS:-1500}"
       HISTORY_DRIVER: "${HISTORY_DRIVER:-sqlite}"
       QUEUE_DRIVER: "${QUEUE_DRIVER:-memory}"
+      GOTSK_UI_TOKEN: "${GOTSK_UI_TOKEN:-}"
       SQS_QUEUE_NAME: "gotsk-tasks"
       SQS_DLQ_NAME: "${SQS_DLQ_NAME:-gotsk-tasks-dead}"
       SQS_ENDPOINT: "http://localstack:4566"

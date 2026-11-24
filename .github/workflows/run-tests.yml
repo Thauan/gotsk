@@ -2,7 +2,7 @@ name: Run Go Tests
 
 on:
   push:
-    branches: [ 
+    branches: [
         "main",
         "feat/**",
         "fix/**",
@@ -36,6 +36,33 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+
+    # Serviços usados pelos testes de integração. Sem eles, os testes são
+    # pulados (cada um depende de uma variável de ambiente).
+    services:
+      localstack:
+        image: localstack/localstack:3.8
+        env:
+          SERVICES: sqs
+        ports:
+          - 4566:4566
+      dynamodb:
+        image: amazon/dynamodb-local:2.5.2
+        ports:
+          - 8000:8000
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      SQS_ENDPOINT: http://localhost:4566
+      DYNAMODB_ENDPOINT: http://localhost:8000
+      REDIS_ADDR: localhost:6379
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_REGION: us-east-1
+
     steps:
     - uses: actions/checkout@v3
 
@@ -44,16 +71,28 @@ jobs:
       with:
         go-version: 1.24
 
+    - name: Wait for services
+      run: |
+        for i in $(seq 1 60); do
+          if curl -sf http://localhost:4566/_localstack/health | grep -q '"sqs": *"available"' \
+             && curl -s http://localhost:8000/ >/dev/null \
+             && (exec 3<>/dev/tcp/localhost/6379) 2>/dev/null; then
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "services not ready"; exit 1
+
     - name: Format
       run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './web-ui/*'))"
 
     # O repositório tem um go.mod por módulo (núcleo, adaptadores, exemplos).
-    # Cada um é verificado separadamente.
+    # Cada um é verificado separadamente, com a detecção de corrida ligada.
     - name: Build, vet and test every module
       run: |
         set -e
         for mod in $(find . -name go.mod -not -path './web-ui/*' -exec dirname {} \; | sort); do
           echo "::group::$mod"
-          (cd "$mod" && go vet ./... && go build ./... && go test -count=1 -cover ./...)
+          (cd "$mod" && go vet ./... && go build ./... && go test -race -count=1 -cover -v ./...)
           echo "::endgroup::"
         done

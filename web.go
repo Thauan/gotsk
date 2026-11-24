@@ -43,10 +43,11 @@ type langFlag struct {
 // shell são os dados comuns a todas as telas: idioma, tradutor, item ativo
 // da barra lateral e as bandeiras.
 type shell struct {
-	Lang   string
-	T      translator
-	Active string
-	Flags  []langFlag
+	Lang        string
+	T           translator
+	Active      string
+	Flags       []langFlag
+	AuthEnabled bool
 }
 
 type taskView struct {
@@ -181,6 +182,7 @@ func (q *Queue) uiTemplates() (*template.Template, error) {
 func (q *Queue) buildView(r *http.Request) (dashboardView, error) {
 	status, search, period := uiFilters(r)
 	sh := newShell(r, "tasks")
+	sh.AuthEnabled = q.authEnabled()
 	view := dashboardView{
 		shell:      sh,
 		Flash:      r.URL.Query().Get("msg"),
@@ -216,13 +218,13 @@ func (q *Queue) buildView(r *http.Request) (dashboardView, error) {
 
 	counts, err := q.repo.Counts(ctx, since)
 	if err != nil {
-		return view, fmt.Errorf("contando tasks: %w", err)
+		return view, fmt.Errorf("counting tasks: %w", err)
 	}
 	view.Counts = counts
 
 	tasks, err := q.repo.List(ctx, interfaces.HistoryFilter{Status: status, Search: search, Since: since})
 	if err != nil {
-		return view, fmt.Errorf("listando tasks: %w", err)
+		return view, fmt.Errorf("listing tasks: %w", err)
 	}
 	for _, t := range tasks {
 		view.Tasks = append(view.Tasks, toTaskView(t, sh.T))
@@ -248,17 +250,17 @@ func toTaskView(t interfaces.Task, tr translator) taskView {
 func (q *Queue) uiHandler() (http.Handler, error) {
 	tmpl, err := q.uiTemplates()
 	if err != nil {
-		return nil, fmt.Errorf("carregando templates: %w", err)
+		return nil, fmt.Errorf("loading templates: %w", err)
 	}
 
 	render := func(w http.ResponseWriter, name string, data any) {
 		if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
-			log.Printf("erro ao renderizar %s: %v", name, err)
+			log.Printf("error rendering %s: %v", name, err)
 		}
 	}
 	fail := func(w http.ResponseWriter, err error) {
-		log.Printf("erro na UI: %v", err)
-		http.Error(w, "erro ao consultar o histórico", http.StatusInternalServerError)
+		log.Printf("UI error: %v", err)
+		http.Error(w, "error querying history", http.StatusInternalServerError)
 	}
 
 	mux := http.NewServeMux()
@@ -295,12 +297,14 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 	})
 
 	mux.HandleFunc("/events", q.streamEvents)
+	mux.HandleFunc("/login", q.loginHandler)
+	mux.HandleFunc("/logout", q.logoutHandler)
 
 	// /lang grava a escolha de idioma num cookie e volta para a tela de origem.
 	mux.HandleFunc("/lang", func(w http.ResponseWriter, r *http.Request) {
 		set := r.URL.Query().Get("set")
 		if !supportedLang(set) {
-			http.Error(w, "idioma não suportado", http.StatusBadRequest)
+			http.Error(w, "language not supported", http.StatusBadRequest)
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -328,6 +332,9 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 		if err := q.RequeueTask(r.Context(), id); err != nil {
 			if errors.Is(err, interfaces.ErrTaskNotFound) {
 				return tr("msg.taskNotFound"), true
+			}
+			if errors.Is(err, ErrTaskNotFailed) {
+				return tr("msg.taskNotFailed"), true
 			}
 			return tr("msg.error", err), true
 		}
@@ -367,7 +374,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 			if errors.Is(err, ErrNoDeadLetter) {
 				return tr("err.noDeadLetter"), true
 			}
-			log.Printf("erro ao devolver dead-letter: %v", err)
+			log.Printf("error requeuing dead-letter: %v", err)
 			return tr("msg.deadRequeueError"), true
 		}
 		return tr("msg.deadRequeued", n), false
@@ -394,7 +401,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 		}
 		n, err := q.repo.Purge(r.Context(), filter)
 		if err != nil {
-			log.Printf("erro ao limpar histórico: %v", err)
+			log.Printf("error clearing history: %v", err)
 			return tr("msg.purgeError"), true
 		}
 		return tr("msg.purgeDone", n, scope), false
@@ -406,7 +413,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 			if errors.Is(err, ErrNoHistory) {
 				return tr("err.noHistory"), true
 			}
-			log.Printf("erro ao reenfileirar falhas: %v", err)
+			log.Printf("error requeuing failures: %v", err)
 			return tr("msg.requeueError"), true
 		}
 		msg := tr("msg.requeued", requeued)
@@ -416,7 +423,7 @@ func (q *Queue) uiHandler() (http.Handler, error) {
 		return msg, skipped > 0
 	}))
 
-	return mux, nil
+	return q.withAuth(mux), nil
 }
 
 // action envolve uma ação que altera estado: aceita só POST de mesma origem
@@ -500,7 +507,7 @@ type settingsView struct {
 
 func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
 	view := settingsView{
-		shell:      newShell(r, "settings"),
+		shell:      withAuthFlag(newShell(r, "settings"), q.authEnabled()),
 		Flash:      r.URL.Query().Get("msg"),
 		FlashError: r.URL.Query().Get("kind") == "erro",
 		Paused:     q.Paused(),
@@ -512,7 +519,7 @@ func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
 	if view.DeadConfigured {
 		n, ok, err := q.DeadLetterSize(r.Context())
 		if err != nil {
-			log.Printf("erro ao contar dead-letter: %v", err)
+			log.Printf("error counting dead-letter: %v", err)
 		}
 		view.DeadCount, view.DeadCountOK = n, ok && err == nil
 	}
@@ -524,7 +531,7 @@ func (q *Queue) buildSettings(r *http.Request) (settingsView, error) {
 	}
 	counts, err := q.repo.Counts(r.Context(), time.Time{})
 	if err != nil {
-		return view, fmt.Errorf("contando tasks: %w", err)
+		return view, fmt.Errorf("counting tasks: %w", err)
 	}
 	view.Counts = counts
 	return view, nil
@@ -627,12 +634,13 @@ func (q *Queue) taskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("erro ao carregar task: %v", err)
-		http.Error(w, "erro ao consultar o histórico", http.StatusInternalServerError)
+		log.Printf("error loading task: %v", err)
+		http.Error(w, "error querying history", http.StatusInternalServerError)
 		return
 	}
 
 	sh := newShell(r, "tasks")
+	sh.AuthEnabled = q.authEnabled()
 	view := toTaskDetail(t, sh.T)
 	view.shell = sh
 	view.Flash = r.URL.Query().Get("msg")
@@ -640,11 +648,11 @@ func (q *Queue) taskDetail(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := q.uiTemplates()
 	if err != nil {
-		http.Error(w, "erro ao carregar templates", http.StatusInternalServerError)
+		http.Error(w, "error loading templates", http.StatusInternalServerError)
 		return
 	}
 	if err := tmpl.ExecuteTemplate(w, "task-detail.html", view); err != nil {
-		log.Printf("erro ao renderizar task-detail: %v", err)
+		log.Printf("error rendering task-detail: %v", err)
 	}
 }
 
@@ -663,8 +671,8 @@ func (q *Queue) taskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("erro ao gerar log: %v", err)
-		http.Error(w, "erro ao consultar o histórico", http.StatusInternalServerError)
+		log.Printf("error generating log: %v", err)
+		http.Error(w, "error querying history", http.StatusInternalServerError)
 		return
 	}
 
@@ -704,7 +712,7 @@ func (q *Queue) taskLog(w http.ResponseWriter, r *http.Request) {
 func (q *Queue) ServeUI(addr string, ctx context.Context) {
 	handler, err := q.uiHandler()
 	if err != nil {
-		log.Fatalf("erro ao iniciar UI: %v", err)
+		log.Fatalf("error starting UI: %v", err)
 	}
 
 	srv := &http.Server{
@@ -714,14 +722,17 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("🛑 Encerrando servidor UI...")
+		log.Println("🛑 Shutting down UI server...")
 		srv.Shutdown(context.Background())
 	}()
 
+	if !q.authEnabled() {
+		log.Printf("⚠️ UI without authentication: call SetUIToken to protect it")
+	}
 	go func() {
-		log.Printf("🌐 Servindo UI em http://%s", addr)
+		log.Printf("🌐 Serving UI at http://%s", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Erro ao iniciar UI: %v", err)
+			log.Fatalf("error starting UI: %v", err)
 		}
 	}()
 }
@@ -732,7 +743,7 @@ func (q *Queue) ServeUI(addr string, ctx context.Context) {
 func (q *Queue) streamEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "Streaming não suportado", http.StatusInternalServerError)
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
@@ -762,4 +773,9 @@ func (q *Queue) streamEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func withAuthFlag(sh shell, enabled bool) shell {
+	sh.AuthEnabled = enabled
+	return sh
 }

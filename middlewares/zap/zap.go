@@ -10,13 +10,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// LoggingMiddleware registra início, fim e duração de cada task com zap.
+// LoggingMiddleware logs the start, end and duration of each task with zap.
 func LoggingMiddleware(logger *zap.Logger) interfaces.Middleware {
 	return func(next interfaces.HandlerFunc) interfaces.HandlerFunc {
 		return func(ctx context.Context, payload interfaces.Payload) error {
 			start := time.Now()
 
-			logger.Info("Iniciando task",
+			logger.Info("Starting task",
 				zap.Any("payload", payload),
 				zap.Time("inicio", start),
 			)
@@ -26,13 +26,13 @@ func LoggingMiddleware(logger *zap.Logger) interfaces.Middleware {
 			if err != nil {
 				logger.Error("Task falhou",
 					zap.Any("payload", payload),
-					zap.Duration("duração", time.Since(start)),
+					zap.Duration("duration", time.Since(start)),
 					zap.Error(err),
 				)
 			} else {
-				logger.Info("Task concluída com sucesso",
+				logger.Info("Task completed successfully",
 					zap.Any("payload", payload),
-					zap.Duration("duração", time.Since(start)),
+					zap.Duration("duration", time.Since(start)),
 				)
 			}
 
